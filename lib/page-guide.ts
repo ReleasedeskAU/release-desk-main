@@ -259,6 +259,24 @@ const STATIC_GUIDES: Record<string, PageGuideEntry> = {
       { label: "Knowledge Graph", href: "/knowledge-graph" },
     ],
   },
+  "/admin-connectors": {
+    key: "admin-connectors",
+    title: "Admin Connectors",
+    description:
+      "Catalog of index sources. Add a source so Ask can search its documents. Status and delete stay on Connectors.",
+    dataSource: "none",
+    tips: [
+      "Coming soon tiles cannot be created yet (sign-in, file upload, or XenForo).",
+      "Search filters tiles by source name or id.",
+      "Jira, GitHub, Teams, and Email use the same guided add as Connectors.",
+      "Other sources list what they actually index before you set scope.",
+      "Sources with no filter index the entire account the credentials can see.",
+    ],
+    related: [
+      { label: "Connectors", href: "/connectors" },
+      { label: "Ask", href: "/ask" },
+    ],
+  },
   "/connectors": {
     key: "connectors",
     title: "Connectors",
@@ -271,6 +289,7 @@ const STATIC_GUIDES: Record<string, PageGuideEntry> = {
     ],
     related: [
       { label: "Ask", href: "/ask" },
+      { label: "Admin Connectors", href: "/admin-connectors" },
       { label: "Reference Data", href: "/admin/reference-data" },
     ],
   },

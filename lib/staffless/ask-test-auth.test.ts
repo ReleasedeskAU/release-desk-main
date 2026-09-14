@@ -27,11 +27,12 @@ describe("authorizeAskTest", () => {
     process.env.ASK_TEST_ENABLED = "true";
     process.env.ASK_TEST_TOKEN = TOKEN;
     try {
-      assert.equal(authorizeAskTest(null).status, 401);
-      assert.equal(authorizeAskTest("Bearer short").status, 401);
-      assert.equal(authorizeAskTest(`Bearer ${"b".repeat(TOKEN.length)}`).status, 401);
+      const unauthorized = { ok: false as const, status: 401, error: "Unauthorized" };
+      assert.deepEqual(authorizeAskTest(null), unauthorized);
+      assert.deepEqual(authorizeAskTest("Bearer short"), unauthorized);
+      assert.deepEqual(authorizeAskTest(`Bearer ${"b".repeat(TOKEN.length)}`), unauthorized);
       process.env.ASK_TEST_TOKEN = "";
-      assert.equal(authorizeAskTest(`Bearer ${TOKEN}`).status, 401);
+      assert.deepEqual(authorizeAskTest(`Bearer ${TOKEN}`), unauthorized);
     } finally {
       restore(prevEnabled, prevToken);
     }

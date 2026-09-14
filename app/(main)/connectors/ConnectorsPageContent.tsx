@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { AlertTriangle, ChevronRight, History, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { getConnectorTypeDef, statusBadge } from "@/lib/connectors/types";
 import { TableSkeleton } from "@/components/ui/TableSkeleton";
@@ -148,8 +149,12 @@ export default function ConnectorsPageContent() {
           <div className="max-w-[700px]">
             <h1 className="text-[32px] font-bold text-[#111827] tracking-tight mb-2">System Connectors</h1>
             <p className="text-[15px] text-gray-500 font-medium leading-relaxed">
-              Poll Jira, GitHub, Teams, and email (IMAP) through StaffLess AI. Sync Now queues an index run; Pause stops
-              polling; Delete removes the StaffLess copy of that data.
+              Poll Jira, GitHub, Teams, and email (IMAP). Sync Now queues an index run; Pause stops polling; Delete
+              removes the indexed copy of that data. To add other sources, use{" "}
+              <Link href="/admin-connectors" className="text-[#2548C9] hover:underline">
+                Admin Connectors
+              </Link>
+              .
             </p>
           </div>
           <button

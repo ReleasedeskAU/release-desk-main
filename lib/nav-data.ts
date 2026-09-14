@@ -89,6 +89,7 @@ export const NAV_DATA_SECTIONS: readonly NavDataSection[] = [
       { href: "/agents", label: "Agents", pulse: true },
       { href: "/history", label: "History Log" },
       { href: "/connectors", label: "Connectors" },
+      { href: "/admin-connectors", label: "Admin Connectors" },
       { href: "/admin/reference-data", label: "Reference Data" },
       { href: "/admin-voice", label: "Voice Admin" },
       { href: "/settings", label: "Settings" },

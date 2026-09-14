@@ -4,6 +4,7 @@
  */
 import type { LucideIcon } from "lucide-react";
 import {
+  LayoutGrid,
   LayoutDashboard,
   Package,
   Calendar,
@@ -86,6 +87,7 @@ const NAV_ICONS: Readonly<Record<string, LucideIcon>> = {
   "/history": History,
   "/ask": MessageSquare,
   "/connectors": Plug,
+  "/admin-connectors": LayoutGrid,
   "/admin/reference-data": Database,
   "/admin-voice": Mic,
   "/settings": Settings,

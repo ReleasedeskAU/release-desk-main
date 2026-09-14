@@ -7,6 +7,8 @@ import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { randomUUID } from "node:crypto";
 import { ASK_AGENT_SYSTEM, ASK_PUBLIC_UNAVAILABLE } from "@/lib/staffless/ask-copy";
+import { listStafflessConnectors } from "@/lib/staffless/api";
+import { formatAskSourceInventory, uniqueAskSources, type AskIndexedSource } from "@/lib/staffless/ask-source";
 import {
   formatDocumentByKeyAnswer,
   parseDocumentByKeyResult,
@@ -14,7 +16,7 @@ import {
 } from "@/lib/staffless/ask-format";
 import { askGroundingFromTools } from "@/lib/staffless/ask-grounding";
 import type { DocumentByKeyResult } from "@/lib/staffless/ask-catalog";
-import { ASK_TOOL_DOCUMENT_BY_KEY, ASK_TOOLS, dispatchAskTool } from "@/lib/staffless/ask-tools";
+import { ASK_TOOL_DOCUMENT_BY_KEY, buildAskTools, dispatchAskTool } from "@/lib/staffless/ask-tools";
 import type { AskEvent } from "@/lib/staffless/ask-packets";
 import { logger } from "@/lib/logger";
 
@@ -46,8 +48,9 @@ export async function* runAskAgent(opts: {
   }
 
   const openai = new OpenAI({ apiKey });
+  const indexedSources = await loadAskIndexedSources();
   const messages: ChatCompletionMessageParam[] = [
-    { role: "system", content: ASK_AGENT_SYSTEM },
+    { role: "system", content: `${ASK_AGENT_SYSTEM}\n\n${formatAskSourceInventory(indexedSources)}` },
     ...opts.history.slice(-16).map((turn) => ({
       role: turn.role as "user" | "assistant",
       content: turn.content,
@@ -58,6 +61,7 @@ export async function* runAskAgent(opts: {
   try {
     const { text, tools } = await completeAskWithTools(openai, messages, {
       allowTicketTable: opts.history.length === 0,
+      indexedSources,
     });
     logger.info("ask.agent_tools", { tools, n: tools.length });
     yield { type: "status", phase: "answering" };
@@ -77,19 +81,31 @@ export async function* runAskAgent(opts: {
   }
 }
 
+async function loadAskIndexedSources(): Promise<AskIndexedSource[]> {
+  try {
+    return uniqueAskSources(await listStafflessConnectors());
+  } catch (err) {
+    logger.warn("ask.sources_unavailable", { kind: err instanceof Error ? err.name : "unknown" });
+    return [];
+  }
+}
+
 export async function completeAskWithTools(
   openai: OpenAI,
   messages: ChatCompletionMessageParam[],
-  opts?: { allowTicketTable?: boolean }
+  opts?: { allowTicketTable?: boolean; indexedSources?: AskIndexedSource[] }
 ): Promise<{ text: string; tools: string[] }> {
   const allowTicketTable = opts?.allowTicketTable ?? true;
+  const indexedSources = opts?.indexedSources ?? [];
+  const toolDefs = buildAskTools(indexedSources.map((item) => item.id));
+  const sourceContext = { sources: indexedSources };
   const tools: string[] = [];
   let lastDocument: DocumentByKeyResult | null = null;
   for (let round = 0; round < ASK_MAX_TOOL_ROUNDS; round += 1) {
     const res = await openai.chat.completions.create({
       model: "gpt-4o",
       messages,
-      tools: ASK_TOOLS,
+      tools: toolDefs,
       tool_choice: "auto",
       temperature: 0.2,
       max_tokens: 1600,
@@ -111,7 +127,7 @@ export async function completeAskWithTools(
       } catch {
         raw = {};
       }
-      const dispatched = await dispatchAskTool(call.function.name, raw);
+      const dispatched = await dispatchAskTool(call.function.name, raw, sourceContext);
       if (call.function.name === ASK_TOOL_DOCUMENT_BY_KEY) {
         lastDocument = parseDocumentByKeyResult(dispatched.result);
       }

@@ -2,7 +2,13 @@
  * StaffLess AI connector + document operations used by Sentinel API routes.
  */
 
-import { stafflessFetch } from "@/lib/staffless/client";
+import { StafflessApiError, stafflessFetch } from "@/lib/staffless/client";
+import { planCatalogCreate, type CatalogCreateInput } from "@/lib/admin-connectors/plan-create";
+import {
+  assertBitbucketConnectorReachable,
+  BITBUCKET_ENGINE_STALE_CHECK,
+  isStaleBitbucketEngineCheck,
+} from "@/lib/bitbucket/probe";
 import {
   isStafflessConnectorType,
   planStafflessConnector,
@@ -26,6 +32,65 @@ import {
 } from "@/lib/staffless/map-search-docs";
 
 type IdResponse = { id?: number };
+
+type EngineConnectorRow = {
+  id: number;
+  name: string;
+  source: string;
+  credential_ids?: number[];
+};
+
+async function quietlyDelete(path: string): Promise<void> {
+  try {
+    await stafflessFetch(path, { method: "DELETE" });
+  } catch {
+    // Best-effort cleanup after a failed create. The original error is returned.
+  }
+}
+
+/**
+ * Remove an unpaired connector with this name and source (failed create leftover).
+ */
+async function deleteUnpairedConnector(name: string, source: string): Promise<void> {
+  const rows = await stafflessFetch<EngineConnectorRow[]>("/api/manage/admin/connector");
+  const orphan = (Array.isArray(rows) ? rows : []).find(
+    (row) => row.name === name && row.source === source && !(row.credential_ids?.length)
+  );
+  if (!orphan) return;
+  await quietlyDelete(`/api/manage/admin/connector/${orphan.id}`);
+}
+
+async function createEngineConnector(body: { name: string; source: string }): Promise<number> {
+  const json = body as unknown as Record<string, unknown>;
+  try {
+    const connector = await stafflessFetch<IdResponse>("/api/manage/admin/connector", { json });
+    if (connector?.id == null) throw new Error("Index engine did not return a connector id");
+    return connector.id;
+  } catch (err) {
+    if (!(err instanceof StafflessApiError) || err.status !== 400) throw err;
+    await deleteUnpairedConnector(body.name, body.source);
+    const retry = await stafflessFetch<IdResponse>("/api/manage/admin/connector", { json });
+    if (retry?.id == null) throw err;
+    return retry.id;
+  }
+}
+
+async function pairEngineCredential(
+  connectorId: number,
+  credentialId: number,
+  name: string
+): Promise<void> {
+  try {
+    await stafflessFetch(`/api/manage/connector/${connectorId}/credential/${credentialId}`, {
+      method: "PUT",
+      json: { name, access_type: "public", groups: [] },
+    });
+  } catch (err) {
+    await quietlyDelete(`/api/manage/admin/connector/${connectorId}`);
+    await quietlyDelete(`/api/manage/admin/credential/${credentialId}`);
+    throw err;
+  }
+}
 
 export { isStafflessConnectorType, StafflessIdError };
 
@@ -57,18 +122,60 @@ export async function createStafflessConnector(input: WizardCreateInput): Promis
   const credential = await stafflessFetch<IdResponse>("/api/manage/credential", {
     json: plan.credential,
   });
-  const connector = await stafflessFetch<IdResponse>("/api/manage/admin/connector", {
-    json: plan.connector,
+  const credentialId = credential?.id;
+  if (credentialId == null) throw new Error("Index engine did not return a credential id");
+  const connectorId = await createEngineConnector(plan.connector);
+  await pairEngineCredential(connectorId, credentialId, input.name);
+  return { id: connectorId };
+}
+
+/**
+ * Create from the Admin Connectors catalog (any ready source).
+ * Sources with no credential fields use the engine mock-credential path.
+ */
+async function preflightCatalogCreate(plan: ReturnType<typeof planCatalogCreate>): Promise<void> {
+  if (plan.connector.source !== "bitbucket") return;
+  const creds = plan.credential.credential_json;
+  const config = plan.connector.connector_specific_config;
+  await assertBitbucketConnectorReachable({
+    email: String(creds.bitbucket_email ?? ""),
+    token: String(creds.bitbucket_api_token ?? ""),
+    workspace: String(config.workspace ?? ""),
+    repositories: typeof config.repositories === "string" ? config.repositories : undefined,
+  });
+}
+
+export async function createCatalogStafflessConnector(input: CatalogCreateInput): Promise<{ id: number }> {
+  const plan = planCatalogCreate(input);
+  await preflightCatalogCreate(plan);
+  if (Object.keys(plan.credential.credential_json).length === 0) {
+    const connector = await stafflessFetch<IdResponse>("/api/manage/admin/connector-with-mock-credential", {
+      json: plan.connector,
+    });
+    const connectorId = connector?.id;
+    if (connectorId == null) {
+      throw new Error("Index engine did not return a connector id");
+    }
+    return { id: connectorId };
+  }
+  const credential = await stafflessFetch<IdResponse>("/api/manage/credential", {
+    json: plan.credential,
   });
   const credentialId = credential?.id;
-  const connectorId = connector?.id;
-  if (credentialId == null || connectorId == null) {
-    throw new Error("StaffLess AI did not return connector ids");
+  if (credentialId == null) throw new Error("Index engine did not return a credential id");
+  const connectorId = await createEngineConnector(plan.connector);
+  try {
+    await pairEngineCredential(connectorId, credentialId, input.name.trim());
+  } catch (err) {
+    if (
+      plan.connector.source === "bitbucket" &&
+      err instanceof StafflessApiError &&
+      isStaleBitbucketEngineCheck(err.message)
+    ) {
+      throw new StafflessApiError(400, BITBUCKET_ENGINE_STALE_CHECK);
+    }
+    throw err;
   }
-  await stafflessFetch(`/api/manage/connector/${connectorId}/credential/${credentialId}`, {
-    method: "PUT",
-    json: { name: input.name, access_type: "public", groups: [] },
-  });
   return { id: connectorId };
 }
 

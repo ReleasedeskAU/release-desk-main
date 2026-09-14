@@ -69,23 +69,32 @@ function initialJiraKeys(config: Record<string, unknown>): string[] {
   return [];
 }
 
+/**
+ * Create or edit Jira, GitHub, Teams, or IMAP. Create posts to /api/connectors
+ * (engine credential + connector + pair). `initialType` skips the type picker
+ * when opened from an Admin Connectors tile.
+ */
 export function ConnectorWizard({
   mode,
   existingConnector,
+  initialType,
   onClose,
   onSaved,
 }: {
   mode: "create" | "edit";
   existingConnector: ConnectorTableRow | null;
+  initialType?: ConnectorTypeId;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const isEdit = mode === "edit" && existingConnector != null;
+  const lockedCreateType = !isEdit && initialType != null;
+  const hideTypeStep = isEdit || lockedCreateType;
   const existingConfig = (existingConnector?.config ?? {}) as Record<string, unknown>;
 
-  const [step, setStep] = useState(isEdit ? 2 : 1);
+  const [step, setStep] = useState(hideTypeStep ? 2 : 1);
   const [selectedType, setSelectedType] = useState<ConnectorTypeId | null>(
-    (existingConnector?.type as ConnectorTypeId) ?? null
+    (existingConnector?.type as ConnectorTypeId) ?? initialType ?? null
   );
   const [name, setName] = useState(existingConnector?.name ?? "");
   const [baseUrl, setBaseUrl] = useState(existingConnector?.baseUrl ?? "");
@@ -102,10 +111,18 @@ export function ConnectorWizard({
     return fields;
   });
   const [dataTypes, setDataTypes] = useState<string[]>(() =>
-    existingConnector ? dataTypesFromConfig(existingConnector.type, existingConfig) : []
+    existingConnector
+      ? dataTypesFromConfig(existingConnector.type, existingConfig)
+      : initialType
+        ? defaultDataTypesForType(initialType)
+        : []
   );
   const [dataTypesError, setDataTypesError] = useState<string | null>(null);
-  const [pollInterval, setPollInterval] = useState(existingConnector?.pollInterval ?? 15);
+  const [pollInterval, setPollInterval] = useState(
+    existingConnector?.pollInterval ??
+      (initialType ? getConnectorTypeDef(initialType)?.defaultPollInterval : undefined) ??
+      15
+  );
   const [fieldCheck, setFieldCheck] = useState<{ ok: boolean; message?: string } | null>(
     isEdit ? { ok: true } : null
   );
@@ -421,7 +438,7 @@ export function ConnectorWizard({
     }
   };
 
-  const stepLabel = `Step ${isEdit ? step - 1 : step} of ${isEdit ? totalSteps - 1 : totalSteps}`;
+  const stepLabel = `Step ${hideTypeStep ? step - 1 : step} of ${hideTypeStep ? totalSteps - 1 : totalSteps}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -429,7 +446,11 @@ export function ConnectorWizard({
         <div className="flex items-center justify-between border-b px-6 py-4">
           <div>
             <h2 className="text-xl font-bold text-gray-900">
-              {isEdit ? `Edit Connector — ${existingConnector?.name}` : "Add Connector"}
+              {isEdit
+                ? `Edit Connector — ${existingConnector?.name}`
+                : lockedCreateType && typeDef
+                  ? `Add ${typeDef.label}`
+                  : "Add Connector"}
             </h2>
             <p className="text-sm text-gray-500">{stepLabel}</p>
           </div>
@@ -439,17 +460,17 @@ export function ConnectorWizard({
         </div>
 
         <div className="p-6">
-          {isEdit && (
+          {(isEdit || lockedCreateType) && selectedType && (
             <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 flex items-center gap-3">
-              <ConnectorTypeIcon type={existingConnector!.type} />
+              <ConnectorTypeIcon type={selectedType} />
               <div>
                 <p className="text-xs font-semibold uppercase text-gray-500">Source type (locked)</p>
-                <p className="font-semibold text-gray-900">{typeLabel(existingConnector!.type)}</p>
+                <p className="font-semibold text-gray-900">{typeLabel(selectedType)}</p>
               </div>
             </div>
           )}
 
-          {step === 1 && !isEdit && (
+          {step === 1 && !hideTypeStep && (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
               {CONNECTOR_TYPES.map((t) => (
                 <button
@@ -617,7 +638,7 @@ export function ConnectorWizard({
                       : "StaffLess has no separate connection-test API. Credentials are verified on the next Sync Now."}
               </p>
               <div className="flex justify-between pt-4">
-                {!isEdit ? (
+                {!hideTypeStep ? (
                   <button type="button" onClick={() => setStep(1)} className="text-sm text-gray-600 hover:underline">
                     Back
                   </button>

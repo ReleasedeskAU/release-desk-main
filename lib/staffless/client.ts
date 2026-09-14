@@ -71,7 +71,7 @@ export async function stafflessFetch<T>(
     const text = await res.text();
     if (!res.ok) {
       logger.warn("staffless.fetch_failed", { status: res.status, path });
-      throw new StafflessApiError(res.status, publicStafflessError(res.status));
+      throw new StafflessApiError(res.status, publicStafflessError(res.status, text));
     }
     if (!text) return null as T;
     return JSON.parse(text) as T;
@@ -123,14 +123,44 @@ export async function stafflessFetchStream(
 }
 
 /**
- * Generic client-facing error — never include StaffLess body (may leak internals).
+ * Client-facing error. Optional engine body is scanned for known phrases only —
+ * never returned or logged.
  */
-export function publicStafflessError(status: number): string {
+export function publicStafflessError(status: number, engineBody?: string): string {
+  const mapped = mapKnownEngineRejection(engineBody);
+  if (mapped) return mapped;
   if (status === 401 || status === 403) return "StaffLess AI rejected the request";
   if (status === 404) return "StaffLess AI resource not found";
   if (status === 409) return "StaffLess AI reported a conflict";
   if (status >= 400 && status < 500) return "StaffLess AI rejected the request";
   return "StaffLess AI is unavailable";
+}
+
+function mapKnownEngineRejection(engineBody?: string): string | null {
+  if (!engineBody) return null;
+  const lower = engineBody.toLowerCase();
+  if (lower.includes("unexpected keyword")) {
+    return "The index engine rejected this source configuration. Restart the index engine and try again.";
+  }
+  if (lower.includes("duplicate naming not allowed") || lower.includes("already exists, duplicate")) {
+    return "A connector with this name already exists. Use a different name, or delete the leftover connector.";
+  }
+  if (
+    lower.includes("bitbucket") &&
+    (lower.includes("invalid or expired") || lower.includes("http 401"))
+  ) {
+    return "Bitbucket rejected the credentials.";
+  }
+  if (
+    lower.includes("bitbucket") &&
+    (lower.includes("insufficient permissions") || lower.includes("http 403"))
+  ) {
+    return "Bitbucket denied access to that workspace.";
+  }
+  if (lower.includes("bitbucket") && (lower.includes("status=404") || lower.includes("http 404"))) {
+    return "Bitbucket could not find that workspace.";
+  }
+  return null;
 }
 
 export function stafflessHttpStatus(err: unknown): number {

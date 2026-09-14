@@ -56,7 +56,7 @@ export type DateRangeArgs = {
 };
 
 export type VerifiedCountArgs = DateRangeArgs & {
-  source?: "jira" | "github" | "all";
+  source?: string;
   filter_field?: CountFilterField;
   filter_value?: string;
   filters?: CatalogFilterPair[];

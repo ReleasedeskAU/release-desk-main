@@ -31,7 +31,7 @@ export const STAFFLESS_DOCUMENT_LIST_PATH = "/api/admin/document-list";
 export const STAFFLESS_DOCUMENT_FIELDS_PATH = "/api/admin/document-fields";
 
 export type CatalogFieldArgs = {
-  source?: "jira" | "github" | "all";
+  source?: string;
   field: CountFilterField;
   date_bucket?: "month";
 };
@@ -59,7 +59,7 @@ export type BreakdownResult = {
 };
 
 export type DocumentByKeyArgs = {
-  source?: "jira" | "github" | "all";
+  source?: string;
   key: string;
 };
 
@@ -74,7 +74,7 @@ export type DocumentByKeyResult = {
 };
 
 export type DocumentMatchArgs = DateRangeArgs & {
-  source?: "jira" | "github" | "all";
+  source?: string;
   filter_field?: CountFilterField;
   filter_value?: string;
   filters?: CatalogFilterPair[];
@@ -150,7 +150,7 @@ export async function listQueryableFields(): Promise<QueryableFieldsResult> {
   };
 }
 
-function sourceBody(source?: "jira" | "github" | "all"): Record<string, string> {
+function sourceBody(source?: string): Record<string, string> {
   return source && source !== "all" ? { source } : {};
 }
 

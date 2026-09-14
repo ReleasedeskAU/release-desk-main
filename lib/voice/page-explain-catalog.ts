@@ -381,7 +381,20 @@ const PAGES: readonly VoicePageExplain[] = [
       "Check connector health",
       "Relate synced entities back to releases via search",
     ],
-    nextSteps: ["Ask", "History Log", "Reference Data", "Settings"],
+    nextSteps: ["Ask", "Admin Connectors", "History Log", "Reference Data", "Settings"],
+  },
+  {
+    path: "/admin-connectors",
+    title: "Admin Connectors",
+    purpose: "Pick an index source. Jira, GitHub, Teams, and Email use the Connectors guided add; other sources walk credentials, what it fetches, scope, and schedule.",
+    canDo: [
+      "Browse every source tile",
+      "Search sources by name",
+      "Add Jira, GitHub, Teams, or Email with the guided picker flow",
+      "Add other token or password sources",
+      "Open Connectors to check status after create",
+    ],
+    nextSteps: ["Connectors", "Ask"],
   },
   {
     path: "/admin/reference-data",

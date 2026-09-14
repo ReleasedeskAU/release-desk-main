@@ -8,8 +8,10 @@ import {
   ASK_TOOL_GET_VERIFIED_COUNT,
   ASK_TOOL_LIST_MATCHING,
   ASK_TOOL_QUERYABLE_FIELDS,
+  ASK_TOOL_INDEXED_SOURCES,
   ASK_TOOL_SEARCH_INDEX,
   ASK_TOOLS,
+  buildAskTools,
   dispatchAskTool,
 } from "./ask-tools";
 import { ASK_AGENT_SYSTEM } from "./ask-copy";
@@ -17,6 +19,7 @@ import { ASK_MAX_TOOL_ROUNDS } from "./ask-agent";
 import { ASK_NO_TOOL_HINT, ASK_PUBLIC_UNAVAILABLE, ASK_TOOL_FAILURE_HINT } from "./ask-errors";
 
 const CATALOG_TOOLS = [
+  ASK_TOOL_INDEXED_SOURCES,
   ASK_TOOL_GET_VERIFIED_COUNT,
   ASK_TOOL_BREAKDOWN,
   ASK_TOOL_DISTINCT,
@@ -27,7 +30,7 @@ const CATALOG_TOOLS = [
 ];
 
 describe("Ask catalog tools", () => {
-  it("exposes seven distinct tools with non-overlapping jobs", () => {
+  it("exposes eight distinct tools with non-overlapping jobs", () => {
     const names = ASK_TOOLS.map((t) => (t.type === "function" ? t.function.name : "")).sort();
     assert.deepEqual(names, [...CATALOG_TOOLS].sort());
     const byName = Object.fromEntries(
@@ -44,6 +47,15 @@ describe("Ask catalog tools", () => {
     assert.match(byName[ASK_TOOL_QUERYABLE_FIELDS] ?? "", /Published fields/);
     assert.match(byName[ASK_TOOL_SEARCH_INDEX] ?? "", /Ranked sample/);
     assert.match(byName[ASK_TOOL_SEARCH_INDEX] ?? "", /Never use for how-many/);
+    assert.match(byName[ASK_TOOL_INDEXED_SOURCES] ?? "", /Created connector sources/);
+    const live = buildAskTools(["bitbucket", "jira"]);
+    const count = live.find((t) => t.type === "function" && t.function.name === ASK_TOOL_GET_VERIFIED_COUNT);
+    const sourceEnum =
+      count && count.type === "function"
+        ? ((count.function.parameters as { properties?: { source?: { enum?: string[] } } })?.properties?.source
+            ?.enum ?? [])
+        : [];
+    assert.deepEqual(sourceEnum, ["all", "bitbucket", "jira"]);
   });
 
   it("rejects unknown tools, extra args, and invalid fields without calling StaffLess", async () => {
@@ -65,6 +77,18 @@ describe("Ask catalog tools", () => {
     assert.match(missingValue.result, /invalid_args/);
     const pii = await dispatchAskTool(ASK_TOOL_DISTINCT, { field: "assignee_email" });
     assert.match(pii.result, /invalid_args/);
+    const listed = await dispatchAskTool(
+      ASK_TOOL_INDEXED_SOURCES,
+      {},
+      { sources: [{ id: "bitbucket", label: "Bitbucket", docsIndexed: 1 }] }
+    );
+    assert.match(listed.result, /bitbucket/);
+    const blocked = await dispatchAskTool(
+      ASK_TOOL_GET_VERIFIED_COUNT,
+      { source: "confluence" },
+      { sources: [{ id: "jira", label: "Jira", docsIndexed: 2 }] }
+    );
+    assert.match(blocked.result, /unknown_source/);
   });
 
   it("allow-lists metadata fields and describes tool choice rather than phrases", () => {
@@ -105,6 +129,8 @@ describe("Ask catalog tools", () => {
     assert.equal(/Q26|Q24|Q33/i.test(ASK_AGENT_SYSTEM), false);
     assert.match(ASK_AGENT_SYSTEM, /Never call that number "repos"/);
     assert.match(ASK_AGENT_SYSTEM, /num_files_changed/);
+    assert.match(ASK_AGENT_SYSTEM, /list_indexed_sources/);
+    assert.match(ASK_AGENT_SYSTEM, /Never claim a fixed vendor list/);
     const countTool = ASK_TOOLS.find((t) => t.type === "function" && t.function.name === ASK_TOOL_GET_VERIFIED_COUNT);
     assert.match(countTool && countTool.type === "function" ? countTool.function.description ?? "" : "", /not repositories/);
     assert.equal(/how many Jira tickets are indexed/i.test(ASK_AGENT_SYSTEM), false);
@@ -185,6 +211,9 @@ describe("Ask date-range tools", () => {
       const github = await dispatchAskTool(ASK_TOOL_GET_VERIFIED_COUNT, { source: "github" });
       const githubPayload = JSON.parse(github.result) as { note?: string };
       assert.match(githubPayload.note ?? "", /not repositories/);
+      const bitbucket = await dispatchAskTool(ASK_TOOL_GET_VERIFIED_COUNT, { source: "bitbucket" });
+      assert.equal((sent as { source?: string }).source, "bitbucket");
+      assert.equal(JSON.parse(bitbucket.result).count, 7);
     } finally {
       globalThis.fetch = originalFetch;
       if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;
