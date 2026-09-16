@@ -59,6 +59,8 @@ export type ConnectorTableRow = {
   lastStatus: string | null;
   lastFinishedStatus: string | null;
   lastError: string | null;
+  /** True when the latest index failure looks like a revoked/invalid token. */
+  reconnectRequired?: boolean;
   enabled: boolean;
   docsIndexed: number;
   latestAttemptDocsIndexed: number | null;
@@ -76,7 +78,7 @@ function sourceToType(source: string | undefined): string {
 }
 
 function authTypeFor(type: string): string {
-  if (type === "jira" || type === "imap") return "basic_token";
+  if (type === "jira" || type === "imap" || type === "bitbucket") return "basic_token";
   return "api_key";
 }
 
@@ -101,8 +103,34 @@ function githubDataTypes(cfg: Record<string, unknown>): string[] {
   const types: string[] = [];
   if (cfg.include_prs !== false) types.push("pull_requests");
   if (cfg.include_issues === true) types.push("issues");
+  if (cfg.include_overview !== false) types.push("repository_overview");
+  if (cfg.include_commits !== false) types.push("commits");
   if (cfg.include_files === true) types.push("files");
   return types;
+}
+
+function gitlabDataTypes(cfg: Record<string, unknown>): string[] {
+  const types: string[] = [];
+  if (cfg.include_mrs !== false) types.push("pull_requests");
+  if (cfg.include_issues !== false) types.push("issues");
+  if (cfg.include_overview !== false) types.push("repository_overview");
+  if (cfg.include_commits !== false) types.push("commits");
+  return types;
+}
+
+function bitbucketDataTypes(cfg: Record<string, unknown>): string[] {
+  const types: string[] = [];
+  if (cfg.include_prs !== false) types.push("pull_requests");
+  if (cfg.include_repo !== false || cfg.include_readme !== false) types.push("repository_overview");
+  if (cfg.include_commits !== false) types.push("commits");
+  return types;
+}
+
+function wizardDataTypes(type: string, cfg: Record<string, unknown>): string[] | undefined {
+  if (type === "github") return githubDataTypes(cfg);
+  if (type === "gitlab") return gitlabDataTypes(cfg);
+  if (type === "bitbucket") return bitbucketDataTypes(cfg);
+  return undefined;
 }
 
 /**
@@ -155,7 +183,9 @@ export function mapConnectorToTableRow(
       ? cfg.jira_base_url
       : typeof cfg.github_base_url === "string"
         ? cfg.github_base_url
-        : host ?? null;
+        : typeof cfg.gitlab_url === "string"
+          ? cfg.gitlab_url
+          : host ?? null;
   const projectKey = typeof cfg.project_key === "string" ? cfg.project_key : undefined;
   const jqlQuery = typeof cfg.jql_query === "string" ? cfg.jql_query : undefined;
   const jqlKeys = parseGeneratedJiraProjectJql(jqlQuery);
@@ -185,7 +215,36 @@ export function mapConnectorToTableRow(
       : typeof cfg.port === "string" && cfg.port.trim()
         ? cfg.port.trim()
         : undefined;
-  const dataTypes = type === "github" ? githubDataTypes(cfg) : undefined;
+  const gitlabPaths: string[] = [];
+  if (type === "gitlab") {
+    if (typeof cfg.projects === "string") {
+      gitlabPaths.push(
+        ...cfg.projects
+          .split(",")
+          .map((part) => part.trim())
+          .filter(Boolean)
+      );
+    }
+    if (gitlabPaths.length === 0) {
+      const owner = typeof cfg.project_owner === "string" ? cfg.project_owner.trim() : "";
+      const name = typeof cfg.project_name === "string" ? cfg.project_name.trim() : "";
+      if (owner && name) gitlabPaths.push(`${owner}/${name}`);
+    }
+  }
+  const bitbucketWorkspace = type === "bitbucket" && typeof cfg.workspace === "string" ? cfg.workspace.trim() : "";
+  const bitbucketSlugs =
+    type === "bitbucket"
+      ? (typeof cfg.repositories === "string" ? cfg.repositories : "")
+          .split(",")
+          .map((part) => part.trim())
+          .filter(Boolean)
+      : [];
+  const bitbucketRepos =
+    bitbucketWorkspace && bitbucketSlugs.length > 0
+      ? bitbucketSlugs.map((slug) => (slug.includes("/") ? slug : `${bitbucketWorkspace}/${slug}`))
+      : undefined;
+  const allBitbucketRepos = type === "bitbucket" && Boolean(bitbucketWorkspace) && bitbucketSlugs.length === 0;
+  const dataTypes = wizardDataTypes(type, cfg);
 
   return {
     id: String(connector.id),
@@ -206,6 +265,10 @@ export function mapConnectorToTableRow(
       ...(repoOwner ? { repoOwner } : {}),
       ...(githubRepos ? { repos: githubRepos } : {}),
       ...(allRepos ? { allRepos: true } : {}),
+      ...(gitlabPaths.length > 0 ? { projects: gitlabPaths } : {}),
+      ...(bitbucketWorkspace ? { workspace: bitbucketWorkspace } : {}),
+      ...(bitbucketRepos ? { repos: bitbucketRepos } : {}),
+      ...(allBitbucketRepos ? { allRepos: true } : {}),
       ...(teamNames ? { teamNames } : {}),
       ...(host ? { host } : {}),
       ...(port ? { port } : {}),
@@ -219,6 +282,7 @@ export function mapConnectorToTableRow(
     lastStatus: optionalString(status?.last_status),
     lastFinishedStatus: optionalString(status?.last_finished_status),
     lastError: badge.lastError,
+    reconnectRequired: false,
     enabled: badge.enabled,
     docsIndexed: optionalCount(status?.docs_indexed) ?? 0,
     latestAttemptDocsIndexed: optionalCount(status?.latest_index_attempt_docs_indexed),

@@ -32,6 +32,8 @@ export const ALLOWED_COUNT_FIELDS = [
   "object_type",
   "num_files_changed",
   "num_commits",
+  "state",
+  "merged",
 ] as const;
 
 export const PII_TAG_FIELDS = ["assignee_email", "reporter_email"] as const;
@@ -153,8 +155,8 @@ export async function getVerifiedCount(args: VerifiedCountArgs): Promise<Verifie
   };
 }
 
-/** GitHub source totals are PRs/issues, never a repository census. */
+/** GitHub source totals are every indexed GitHub document, never a live repo census. */
 function githubCountNote(source: string | undefined, requested: string | undefined, base: string): string {
   if (source !== "github" && requested !== "github") return base;
-  return `${base} GitHub count is unique indexed documents (pull requests and issues), not repositories. Repository count is how many distinct repo values exist.`;
+  return `${base} GitHub count is unique indexed documents (pull requests, issues, repository overviews, READMEs, commits, files if enabled), not repositories. Repository count is how many distinct repo values exist. PR counts use object_type=PullRequest plus state=open, merged=true, or state=closed AND merged=false. Commit counts use object_type=Commit.`;
 }

@@ -4,7 +4,10 @@
  * or StaffLess cannot index.
  */
 
+import { parseBitbucketRepoSelection } from "@/lib/bitbucket/repos";
 import { parseGithubRepoSelection } from "@/lib/github/repos";
+import { parseGitlabProjectSelection } from "@/lib/gitlab/selection";
+import { parsePublicGitlabOrigin } from "@/lib/gitlab/site";
 import { allowedSenderValues } from "@/lib/imap/allowed-senders";
 import { parseImapMailboxNames } from "@/lib/imap/mailboxes";
 import { isJiraAllProjects, jiraProjectInJql, parseJiraProjectKeys } from "@/lib/jira/project-keys";
@@ -42,11 +45,11 @@ export type StafflessCreatePlan = {
   };
 };
 
-const SUPPORTED = new Set(["jira", "github", "teams", "imap"]);
+const SUPPORTED = new Set(["jira", "github", "gitlab", "bitbucket", "teams", "imap"]);
 const IMAP_DEFAULT_PORT = 993;
 const IMAP_MAX_PORT = 65535;
 
-/** True when StaffLess can create/update this source (jira, github, teams, imap). */
+/** True when StaffLess can create/update this source (jira, github, gitlab, bitbucket, teams, imap). */
 export function isStafflessConnectorType(type: string): boolean {
   return SUPPORTED.has(type.trim().toLowerCase());
 }
@@ -67,6 +70,8 @@ export function planStafflessConnector(input: WizardConnectorInput): StafflessCr
   const refresh = refreshSeconds(input.pollInterval);
   if (type === "jira") return jiraConnector(input, refresh);
   if (type === "github") return githubConnector(input, refresh);
+  if (type === "gitlab") return gitlabConnector(input, refresh);
+  if (type === "bitbucket") return bitbucketConnector(input, refresh);
   if (type === "teams") return teamsConnector(input, refresh);
   return imapConnector(input, refresh);
 }
@@ -83,6 +88,8 @@ export function planStafflessCreate(input: WizardCreateInput): StafflessCreatePl
   const refresh = refreshSeconds(input.pollInterval);
   if (type === "jira") return jiraPlan(input, refresh);
   if (type === "github") return githubPlan(input, refresh);
+  if (type === "gitlab") return gitlabPlan(input, refresh);
+  if (type === "bitbucket") return bitbucketPlan(input, refresh);
   if (type === "teams") return teamsPlan(input, refresh);
   return imapPlan(input, refresh);
 }
@@ -153,23 +160,43 @@ function githubIncludeFlags(config?: Record<string, unknown>): {
   include_prs: boolean;
   include_issues: boolean;
   include_files: boolean;
+  include_overview: boolean;
+  include_commits: boolean;
 } {
   const types = Array.isArray(config?.dataTypes)
     ? config.dataTypes.filter((v): v is string => typeof v === "string")
     : null;
   if (types && types.length === 0) {
-    throw new Error("GitHub needs at least one of pull requests, issues, or documents");
+    throw new Error(
+      "GitHub needs at least one of pull requests, issues, repository overview, commits, or documents"
+    );
   }
   if (!types) {
-    return { include_prs: true, include_issues: true, include_files: false };
+    return {
+      include_prs: true,
+      include_issues: true,
+      include_files: false,
+      include_overview: true,
+      include_commits: true,
+    };
   }
   const flags = {
     include_prs: types.includes("pull_requests"),
     include_issues: types.includes("issues"),
     include_files: types.includes("files"),
+    include_overview: types.includes("repository_overview"),
+    include_commits: types.includes("commits"),
   };
-  if (!flags.include_prs && !flags.include_issues && !flags.include_files) {
-    throw new Error("GitHub needs at least one of pull requests, issues, or documents");
+  if (
+    !flags.include_prs &&
+    !flags.include_issues &&
+    !flags.include_files &&
+    !flags.include_overview &&
+    !flags.include_commits
+  ) {
+    throw new Error(
+      "GitHub needs at least one of pull requests, issues, repository overview, commits, or documents"
+    );
   }
   return flags;
 }
@@ -182,6 +209,8 @@ function githubConnector(input: WizardConnectorInput, refresh: number): Staffles
     include_prs: flags.include_prs,
     include_issues: flags.include_issues,
     include_files: flags.include_files,
+    include_overview: flags.include_overview,
+    include_commits: flags.include_commits,
   };
   if (!selection.allRepos) {
     connector_specific_config.repositories = selection.names.join(",");
@@ -211,6 +240,147 @@ function githubPlan(input: WizardCreateInput, refresh: number): StafflessCreateP
       credential_json: { github_access_token: token },
     },
     connector: githubConnector(input, refresh),
+  };
+}
+
+function dataTypeList(config?: Record<string, unknown>): string[] | null {
+  return Array.isArray(config?.dataTypes)
+    ? config.dataTypes.filter((v): v is string => typeof v === "string")
+    : null;
+}
+
+function gitlabIncludeFlags(config?: Record<string, unknown>): {
+  include_mrs: boolean;
+  include_issues: boolean;
+  include_overview: boolean;
+  include_commits: boolean;
+} {
+  const types = dataTypeList(config);
+  if (types && types.length === 0) {
+    throw new Error("GitLab needs at least one of merge requests, issues, project overview, or commits");
+  }
+  if (!types) {
+    return { include_mrs: true, include_issues: true, include_overview: true, include_commits: true };
+  }
+  const flags = {
+    include_mrs: types.includes("pull_requests"),
+    include_issues: types.includes("issues"),
+    include_overview: types.includes("repository_overview"),
+    include_commits: types.includes("commits"),
+  };
+  if (!flags.include_mrs && !flags.include_issues && !flags.include_overview && !flags.include_commits) {
+    throw new Error("GitLab needs at least one of merge requests, issues, project overview, or commits");
+  }
+  return flags;
+}
+
+function gitlabConnector(input: WizardConnectorInput, refresh: number): StafflessCreatePlan["connector"] {
+  const selection = parseGitlabProjectSelection(input.config);
+  const flags = gitlabIncludeFlags(input.config);
+  return {
+    name: input.name,
+    source: "gitlab",
+    input_type: "poll",
+    access_type: "public",
+    groups: [],
+    refresh_freq: refresh,
+    ...(input.indexingStart ? { indexing_start: input.indexingStart } : {}),
+    connector_specific_config: {
+      project_owner: selection.owner,
+      project_name: selection.name,
+      projects: selection.paths.join(","),
+      include_mrs: flags.include_mrs,
+      include_issues: flags.include_issues,
+      include_overview: flags.include_overview,
+      include_commits: flags.include_commits,
+      include_code_files: false,
+    },
+  };
+}
+
+function gitlabPlan(input: WizardCreateInput, refresh: number): StafflessCreatePlan {
+  const token = input.credentials.token?.trim();
+  const baseUrl = input.baseUrl?.trim();
+  if (!token || !baseUrl) {
+    throw new Error("GitLab needs a token, site URL, and at least one project");
+  }
+  const origin = parsePublicGitlabOrigin(baseUrl);
+  return {
+    credential: {
+      name: `${input.name} credentials`,
+      source: "gitlab",
+      admin_public: true,
+      credential_json: { gitlab_url: origin, gitlab_access_token: token },
+    },
+    connector: gitlabConnector(input, refresh),
+  };
+}
+
+function bitbucketIncludeFlags(config?: Record<string, unknown>): {
+  include_prs: boolean;
+  include_repo: boolean;
+  include_readme: boolean;
+  include_commits: boolean;
+} {
+  const types = dataTypeList(config);
+  if (types && types.length === 0) {
+    throw new Error("Bitbucket needs at least one of pull requests, repository overview, or commits");
+  }
+  if (!types) {
+    return { include_prs: true, include_repo: true, include_readme: true, include_commits: true };
+  }
+  const overview = types.includes("repository_overview");
+  const flags = {
+    include_prs: types.includes("pull_requests"),
+    include_repo: overview,
+    include_readme: overview,
+    include_commits: types.includes("commits"),
+  };
+  if (!flags.include_prs && !flags.include_repo && !flags.include_readme && !flags.include_commits) {
+    throw new Error("Bitbucket needs at least one of pull requests, repository overview, or commits");
+  }
+  return flags;
+}
+
+function bitbucketConnector(input: WizardConnectorInput, refresh: number): StafflessCreatePlan["connector"] {
+  const selection = parseBitbucketRepoSelection(input.config);
+  const flags = bitbucketIncludeFlags(input.config);
+  const connector_specific_config: Record<string, unknown> = {
+    workspace: selection.workspace,
+    include_prs: flags.include_prs,
+    include_repo: flags.include_repo,
+    include_readme: flags.include_readme,
+    include_commits: flags.include_commits,
+  };
+  if (!selection.allRepos) {
+    connector_specific_config.repositories = selection.names.join(",");
+  }
+  return {
+    name: input.name,
+    source: "bitbucket",
+    input_type: "poll",
+    access_type: "public",
+    groups: [],
+    refresh_freq: refresh,
+    ...(input.indexingStart ? { indexing_start: input.indexingStart } : {}),
+    connector_specific_config,
+  };
+}
+
+function bitbucketPlan(input: WizardCreateInput, refresh: number): StafflessCreatePlan {
+  const email = input.credentials.email?.trim();
+  const token = input.credentials.token?.trim();
+  if (!email || !token) {
+    throw new Error("Bitbucket needs email, API token, and at least one repository");
+  }
+  return {
+    credential: {
+      name: `${input.name} credentials`,
+      source: "bitbucket",
+      admin_public: true,
+      credential_json: { bitbucket_email: email, bitbucket_api_token: token },
+    },
+    connector: bitbucketConnector(input, refresh),
   };
 }
 

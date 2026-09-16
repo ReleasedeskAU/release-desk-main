@@ -84,6 +84,30 @@ describe("mapSearchDocToWorkItem", () => {
     assert.equal(mail.source, "Email (IMAP)");
   });
 
+    it("maps GitLab issue type onto the work-item type column", () => {
+    const row = mapSearchDocToWorkItem({
+      document_id: "https://gitlab.com/acme/app/-/issues/3",
+      semantic_identifier: "test issue 3",
+      source_type: "gitlab",
+      metadata: {
+        type: "ISSUE",
+        object_type: "Issue",
+        state: "opened",
+        status: "opened",
+        key: "#3",
+        created: "2026-09-15T12:40:50.661+00:00",
+        updated: "2026-09-15T12:40:50.661+00:00",
+      },
+    });
+    assert.equal(row.source, "GitLab");
+    assert.equal(row.itemType, "Issue");
+    assert.equal(row.status, "opened");
+    assert.equal(row.externalId, "#3");
+    assert.equal(row.createdAt.startsWith("2026-09-15"), true);
+    assert.equal(row.assignee, null);
+    assert.equal(row.priority, null);
+  });
+
   it("deduplicates the same document_id", () => {
     const rows = mapSearchDocsToWorkItems([
       { document_id: "doc-1", semantic_identifier: "A: one", source_type: "jira", metadata: { key: "A" } },

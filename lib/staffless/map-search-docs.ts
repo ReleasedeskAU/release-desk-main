@@ -63,7 +63,8 @@ function sourceLabel(sourceType: string | undefined): string {
   if (lower === "github") return "GitHub";
   if (lower === "bitbucket") return "Bitbucket";
   if (lower === "teams") return "Microsoft Teams";
-  if (lower === "imap") return "Email (IMAP)";
+    if (lower === "imap") return "Email (IMAP)";
+  if (lower === "gitlab") return "GitLab";
   return sourceType.replace(/_/g, " ");
 }
 
@@ -91,7 +92,7 @@ export function mapSearchDocToWorkItem(
     id: typeof doc.document_id === "string" && doc.document_id ? doc.document_id : externalId,
     externalId,
     title: parts.title || semantic || externalId,
-    itemType: metaString(metadata, "issuetype", "object_type") || "Document",
+    itemType: metaString(metadata, "issuetype", "object_type", "type") || "Document",
     releaseCode: metaString(metadata, "release", "fixVersion", "fix_version", "version"),
     status: metaString(metadata, "status", "state") || "Indexed",
     statusCategory: classifyStatusCategory(metaString(metadata, "status_category")),

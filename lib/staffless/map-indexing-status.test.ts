@@ -187,7 +187,11 @@ describe("mergeCcPairsWithIndexingStatus", () => {
       ],
       [{ cc_pair_id: 5, source: "github", last_finished_status: "success" }]
     );
-    assert.deepEqual((rows[0].config as { dataTypes: string[] }).dataTypes, ["pull_requests"]);
+    assert.deepEqual((rows[0].config as { dataTypes: string[] }).dataTypes, [
+      "pull_requests",
+      "repository_overview",
+      "commits",
+    ]);
     assert.equal((rows[0].config as { repo: string }).repo, "acme/app");
     assert.deepEqual((rows[0].config as { repos: string[] }).repos, ["acme/app"]);
   });
@@ -208,6 +212,8 @@ describe("mergeCcPairsWithIndexingStatus", () => {
               include_prs: false,
               include_issues: false,
               include_files: true,
+              include_overview: false,
+              include_commits: false,
             },
           },
         },
@@ -217,6 +223,68 @@ describe("mergeCcPairsWithIndexingStatus", () => {
     assert.deepEqual((rows[0].config as { dataTypes: string[] }).dataTypes, ["files"]);
     assert.equal((rows[0].config as { allRepos: boolean }).allRepos, true);
     assert.equal((rows[0].config as { repoOwner: string }).repoOwner, "acme");
+  });
+
+  it("maps GitLab project paths and include flags onto wizard dataTypes", () => {
+    const rows = mergeCcPairsWithIndexingStatus(
+      [
+        {
+          cc_pair_id: 7,
+          name: "GL",
+          connector: {
+            id: 11,
+            name: "GL",
+            source: "gitlab",
+            credential_ids: [1],
+            connector_specific_config: {
+              project_owner: "acme",
+              project_name: "app",
+              projects: "acme/app,acme/api",
+              include_mrs: true,
+              include_issues: false,
+              include_overview: true,
+              include_commits: true,
+            },
+          },
+        },
+      ],
+      [{ cc_pair_id: 7, source: "gitlab", last_finished_status: "success" }]
+    );
+    assert.deepEqual((rows[0].config as { projects: string[] }).projects, ["acme/app", "acme/api"]);
+    assert.deepEqual((rows[0].config as { dataTypes: string[] }).dataTypes, [
+      "pull_requests",
+      "repository_overview",
+      "commits",
+    ]);
+  });
+
+  it("maps Bitbucket workspace repos and include flags onto wizard dataTypes", () => {
+    const rows = mergeCcPairsWithIndexingStatus(
+      [
+        {
+          cc_pair_id: 8,
+          name: "BB",
+          connector: {
+            id: 12,
+            name: "BB",
+            source: "bitbucket",
+            credential_ids: [1],
+            connector_specific_config: {
+              workspace: "acme",
+              repositories: "app",
+              include_prs: true,
+              include_repo: false,
+              include_readme: false,
+              include_commits: true,
+            },
+          },
+        },
+      ],
+      [{ cc_pair_id: 8, source: "bitbucket", last_finished_status: "success" }]
+    );
+    assert.deepEqual((rows[0].config as { repos: string[] }).repos, ["acme/app"]);
+    assert.deepEqual((rows[0].config as { dataTypes: string[] }).dataTypes, ["pull_requests", "commits"]);
+    assert.equal(rows[0].authType, "basic_token");
   });
 });
 

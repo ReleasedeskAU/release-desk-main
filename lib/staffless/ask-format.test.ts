@@ -48,6 +48,18 @@ describe("formatDocumentByKeyAnswer", () => {
     assert.equal(md.includes("The ticket RD-3 is titled"), false);
   });
 
+  it("adds stored custom field lines as extra table rows", () => {
+    const md = formatDocumentByKeyAnswer({
+      ...FOUND,
+      fields: {
+        ...FOUND.fields,
+        custom_fields: ["Story point estimate: 13", "Team: Platform"],
+      },
+    });
+    assert.match(md, /\| Story point estimate \| 13 \|/);
+    assert.match(md, /\| Team \| Platform \|/);
+  });
+
   it("does not invent values when the ticket is missing", () => {
     const md = formatDocumentByKeyAnswer({
       found: false,

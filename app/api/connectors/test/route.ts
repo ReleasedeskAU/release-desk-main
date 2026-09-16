@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
+import { evaluateConnectorFieldCheck } from "@/lib/connectors/check-fields";
 import { getConnectorTypeDef } from "@/lib/connectors/types";
-import { planStafflessCreate } from "@/lib/staffless/create-payload";
 
 /**
- * Validate wizard fields locally. StaffLess AI verifies credentials on first Sync Now
- * (no separate test endpoint). Never forwards secrets to connector-engine.
+ * Check wizard fields. GitHub PATs are verified with GitHub here.
+ * Never forwards secrets to the index engine. Do not log credentials.
  */
 export async function POST(req: Request) {
   const { error } = await requireRole("editor");
@@ -27,22 +27,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, message: "Connector type is not available yet" });
   }
 
-  try {
-    planStafflessCreate({
-      name: "test",
-      type: body.type,
-      baseUrl: body.baseUrl,
-      credentials: body.credentials,
-      config: body.config,
-    });
-    return NextResponse.json({
-      ok: true,
-      message: "Fields look valid. StaffLess AI will verify credentials on Sync Now.",
-    });
-  } catch (err) {
-    return NextResponse.json({
-      ok: false,
-      message: err instanceof Error ? err.message : "Invalid connector fields",
-    });
-  }
+  const result = await evaluateConnectorFieldCheck({
+    type: body.type,
+    baseUrl: body.baseUrl,
+    credentials: body.credentials,
+    config: body.config,
+  });
+  return NextResponse.json(result);
 }

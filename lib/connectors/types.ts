@@ -1,4 +1,4 @@
-export type ConnectorTypeId = "jira" | "github" | "teams" | "imap";
+export type ConnectorTypeId = "jira" | "github" | "gitlab" | "bitbucket" | "teams" | "imap";
 
 export interface ConnectorFieldDef {
   key: string;
@@ -31,10 +31,21 @@ export const CONNECTOR_TYPES: ConnectorTypeDef[] = [
     available: true,
     defaultPollInterval: 15,
     setupHint:
-      "Use the same Atlassian account email as the API token. After this step we load the live project list from your Jira site so you can pick one or more projects.",
+      "Email must be the Atlassian account that created this API token (the address you use to sign in to Jira). Check fields verifies the site URL, that email, and the token with Jira. A wrong URL, email, or token cannot continue. Next we load the live project list.",
     credentialFields: [
-      { key: "email", label: "Email", type: "text", placeholder: "you@company.com" },
-      { key: "apiToken", label: "API Token", type: "password" },
+      {
+        key: "email",
+        label: "Atlassian account email",
+        type: "text",
+        placeholder: "you@company.com",
+        help: "The Atlassian account that created this API token — not a teammate’s email and not the Jira site URL.",
+      },
+      {
+        key: "apiToken",
+        label: "API Token",
+        type: "password",
+        help: "Create this under that same Atlassian account (Profile → Security → API tokens). Never pasted into Ask or logs.",
+      },
     ],
     configFields: [],
     targetModel: "WorkItem",
@@ -46,13 +57,58 @@ export const CONNECTOR_TYPES: ConnectorTypeDef[] = [
     available: true,
     defaultPollInterval: 15,
     setupHint:
-      "Use a GitHub personal access token with repo access (or public_repo for public repositories). After this step we load the live repository list so you can pick one or more repos from the same owner.",
+      "Use a GitHub personal access token with repo access (classic: repo or public_repo; fine-grained: Contents: Read). Check fields verifies the token with GitHub. Invalid, revoked, or no-permission tokens are rejected here.",
     credentialFields: [
       {
         key: "token",
         label: "Personal Access Token",
         type: "password",
-        help: "Classic or fine-grained PAT. Never pasted into Ask or logs.",
+        help: "Classic needs repo or public_repo. Fine-grained needs Contents: Read. Never pasted into Ask or logs.",
+      },
+    ],
+    configFields: [],
+    targetModel: "WorkItem",
+  },
+  {
+    id: "gitlab",
+    label: "GitLab",
+    authType: "api_key",
+    available: true,
+    defaultPollInterval: 15,
+    setupHint:
+      "Use a GitLab personal access token with read_api (or api). Check fields verifies the site URL and token with GitLab. Next we load the live project list so you can pick one or more projects.",
+    credentialFields: [
+      {
+        key: "token",
+        label: "Access token",
+        type: "password",
+        help: "GitLab personal access token (glpat-…). Needs read_api. Never pasted into Ask or logs.",
+      },
+    ],
+    configFields: [],
+    targetModel: "WorkItem",
+  },
+  {
+    id: "bitbucket",
+    label: "Bitbucket",
+    authType: "basic_token",
+    available: true,
+    defaultPollInterval: 15,
+    setupHint:
+      "Use the Atlassian account email that created this API token, plus the token. Check fields verifies them with Bitbucket. Next we load the live repository list so you can pick one or more repos.",
+    credentialFields: [
+      {
+        key: "email",
+        label: "Atlassian account email",
+        type: "text",
+        placeholder: "you@company.com",
+        help: "The Atlassian account that created this API token — not the Bitbucket username.",
+      },
+      {
+        key: "token",
+        label: "API token",
+        type: "password",
+        help: "Bitbucket Cloud API token. Never pasted into Ask or logs.",
       },
     ],
     configFields: [],

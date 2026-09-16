@@ -8,13 +8,33 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Security
 
+- **GitLab / Bitbucket Check fields:** Add Connector now asks GitLab (`GET /api/v4/user`) and Bitbucket (`GET /2.0/user`) whether the token is accepted before Next. Invalid or revoked tokens cannot continue. Tokens and emails are not logged. Auth unchanged (editor).
+
+- **Jira Check fields:** Add Connector now asks Jira `GET /myself` whether the email + API token are accepted. The email field is labeled as the Atlassian account that created the API token. Wrong site URL (shape, http, unreachable, 404), missing/invalid email, missing token, and Jira 401/403 each return a named message — not a lumped “needs email, token, URL, and a project.” Project list is not used — some sites return 200 for `/project/search` without a valid token. Next stays blocked until Jira accepts the credentials. Token and email are not logged. Auth unchanged (editor).
+
+- **Connector reconnect (401):** When the latest index run failed because the vendor rejected the token (HTTP 401 / expired / invalid credential), the Connectors table shows “Reconnect required…” instead of a generic failure. Ask is told that source’s indexed copies may be stale. Auth unchanged. No stack traces or token values in the message.
+
+- **GitHub token scopes:** Check fields and Add Connector reject a valid GitHub token that cannot read repositories. Classic PATs must include `repo` or `public_repo` (`X-OAuth-Scopes`). Fine-grained PATs must present `Contents: Read`. A contents `404 Not Found` is missing permission (GitHub hides that as 404); only `This repository is empty.` is treated as an empty repo. The error names that missing scope/permission — not a generic connection failure. Token is not logged. Auth unchanged (editor).
+
+- **GitHub Check fields:** Add Connector now asks GitHub whether the PAT can list repositories. Garbage, invalid, and revoked tokens are rejected with “GitHub rejected that token. It is invalid or has been revoked.” Next stays blocked until GitHub accepts the token. The token is not logged and is not sent to the index engine for this check. Auth unchanged (editor).
+
 - **Release tenant scope temporarily off:** Session org matching on release list, detail, and assignment pickers is skipped until Clerk orgs are linked to the data tenant (`RELEASE_TENANT_SCOPE`, default off). Set `RELEASE_TENANT_SCOPE=on` to restore exact `organizationId` matching. Signed-in users can see every org's releases while this is off. Auth is unchanged (still signed-in). No secrets in client errors.
 
 - **Native Scope tenant + download hardening:** Attachment GET responses send `X-Content-Type-Options: nosniff`. Scope pickers, grants, downloads, and release **list + detail** use the same session tenant (directory `User.organizationId`, else Clerk org). Detail still requires an exact `organizationId` match (null/other-org → 404). Assignment pickers are that same org only — not NULL-org users and not unscoped `/api/users`. Change-request approve `updateMany` requires both `requestId` and `scopeId`. Create/Edit Release Manager and Owner pickers use session-tenant `assignmentOptions` (release GET, or `GET /api/release-assignment-options` on create). The form maps those options through a client-safe helper so the preview build does not pull Prisma/Clerk server code into the browser bundle.
 
 ### Added
 
+- **GitLab issue fields:** Indexed GitLab issues and merge requests now store status (`opened`/`closed`/`merged`), created, updated, assignee when GitLab has one, due date when set, labels, project, and `repo` (same tag as GitHub, e.g. `ReleasedeskAU/website-test`). Priority is omitted — GitLab has no native priority. Empty assignee/due stay untagged (Ask should not invent them). Restart the index engine, then GitLab **Re-index from beginning**. Auth unchanged.
+
+- **GitLab / Bitbucket guided onboarding:** GitLab and Bitbucket use the same Add Connector wizard as GitHub: Check fields → live project/repo list → what to index → save. GitLab picks projects (`path_with_namespace`); Bitbucket picks repos and derives the workspace from the pick. GitLab indexes merge requests, issues, project overview + README, and default-branch commit messages. Bitbucket already indexed PRs, overview, README, and default-branch commits — include flags are now sent to the engine. Files, diffs, and comments stay off. Bitbucket issues are skipped (Jira is the issue tracker). Restart the index engine before Sync Now or GitLab extra fields 400. Auth unchanged (editor).
+
+- **Jira custom fields:** Indexed Jira tickets now include populated custom fields (the field’s name in that Jira site, plus the value). Rank / lexorank is skipped. Ask shows them as extra table rows. They are not count/filter fields. Restart the index engine and re-sync before Ask can return them. Auth unchanged.
+
 - **Ask live sources:** Each Ask turn loads created Connectors and builds the tool `source` enum plus a `list_indexed_sources` tool from that list. New connectors are queryable as soon as they are created (0 documents is reported as empty, not missing). The prompt no longer claims a fixed vendor set. Auth unchanged.
+
+- **GitHub commits:** The GitHub connector indexes each unique commit SHA across all branches (message, files touched, lines added/removed, file names). Diffs are not stored. Ask uses `object_type=Commit`. Same SHA on two branches is one document. This is Ask context only — it does not update Weighted Risk. Restart the index engine before Sync Now. Auth unchanged.
+
+- **GitHub repository overview:** The GitHub connector indexes a repo overview (description, default-branch commit count, branch names, contributors, open / merged / closed-without-merge PR snapshot counts, last-commit additions/deletions) plus the README, and still indexes PR/issue details. Ask open PRs use `state=open`; merged use `merged=true`; closed without merging use `state=closed` AND `merged=false`. Do not treat GitHub `state=closed` as rejected. Restart the index engine before Sync Now or the running process stays PR/issue-only. Auth unchanged.
 
 - **Bitbucket create probe:** Add Bitbucket now checks the named repo (or workspace) from Release Desk before the index engine pair. The engine check no longer uses `GET /repositories/{workspace}?fields=pagelen`, which scoped API tokens often 404. If Bitbucket accepts the token and the engine still 404s, the form asks for an index-engine restart. Auth unchanged. Token and email are not logged.
 
@@ -28,9 +48,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Jira restricted issues:** Indexing only includes issues the token’s JQL returns. Issues the token cannot read are never fetched. There is no post-index ACL and no tenant-specific restricted-key list. Auth unchanged.
+
 - **UI test locators:** Create/edit forms and list Add/Edit controls now expose a stable snake_case token on `id` and `data-test-id` (plus `name` on fields) so automation can find them without brittle xpath. Shared pickers and dialogs take locator props instead of hardcoded ids. Existing kebab-case `data-testid` values are unchanged.
 
 ### Fixed
+
+- **GitLab issues in Ask:** Indexed GitLab issues now set `object_type=Issue` (Ask was filtering GitHub’s field and treating GitLab’s `type` tag as “no issues”). Incremental sync no longer uses a brittle timestamp parse that could skip the issue list. After deploying the index engine, use **Re-index from beginning** on the GitLab connector — Sync Now only adds new docs and will not retag the existing 3. Auth unchanged.
 
 - **Production sign-in origin:** Clerk middleware / redirect allow-list now includes `https://desk-release-desk1.vercel.app` (and the request host). `<SignIn />` wiring is unchanged (`ClerkProvider` + path `/sign-in`). If the left pane is still empty after deploy, Guru must add that origin on the Clerk instance (Allowed origins + redirect URLs) and set `NEXT_PUBLIC_APP_URL` on Vercel Production — `pk_live_` cannot serve `*.vercel.app`.
 - **Release detail 500 (releaseManager):** Prisma client was generated without `Release.releaseManager`, so opening a release returned 500. Client regenerated; `clean-and-generate-prisma` now fails if that relation is missing.

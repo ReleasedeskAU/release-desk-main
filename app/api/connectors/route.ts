@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/api";
+import { BitbucketProbeError } from "@/lib/bitbucket/probe";
+import { GithubReposFetchError } from "@/lib/github/fetch-repos";
+import { GitlabProbeError } from "@/lib/gitlab/probe";
+import { GitlabSiteError } from "@/lib/gitlab/site";
 import { parseOptionalIndexingStart } from "@/lib/jira/project-keys";
 import { createStafflessConnector, listStafflessConnectors } from "@/lib/staffless/api";
 import { stafflessHttpStatus, stafflessPublicMessage } from "@/lib/staffless/client";
@@ -56,6 +60,17 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ id: String(created.id), name: body.name.trim(), type: body.type }, { status: 201 });
   } catch (err) {
+    if (
+      err instanceof GithubReposFetchError ||
+      err instanceof GitlabProbeError ||
+      err instanceof GitlabSiteError ||
+      err instanceof BitbucketProbeError
+    ) {
+      return NextResponse.json(
+        { error: err.message },
+        { status: err.status >= 400 ? Math.min(err.status, 502) : 502 }
+      );
+    }
     logger.error("api/connectors.POST", { kind: err instanceof Error ? err.name : "unknown" });
     const planMessage =
       err instanceof Error &&

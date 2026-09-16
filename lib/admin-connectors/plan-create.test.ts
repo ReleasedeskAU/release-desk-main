@@ -41,7 +41,7 @@ describe("planCatalogCreate", () => {
     assert.equal(plan.connector.connector_specific_config.is_cloud, true);
   });
 
-  it("keeps Bitbucket include flags off the engine config", () => {
+  it("sends Bitbucket include flags to the engine", () => {
     const plan = planCatalogCreate({
       name: "BB",
       source: "bitbucket",
@@ -56,10 +56,10 @@ describe("planCatalogCreate", () => {
     });
     const cfg = plan.connector.connector_specific_config;
     assert.equal(cfg.workspace, "acme");
-    assert.equal("include_prs" in cfg, false);
-    assert.equal("include_repo" in cfg, false);
-    assert.equal("include_readme" in cfg, false);
-    assert.equal("include_commits" in cfg, false);
+    assert.equal(cfg.include_prs, true);
+    assert.equal(cfg.include_repo, true);
+    assert.equal(cfg.include_readme, true);
+    assert.equal(cfg.include_commits, false);
   });
 
   it("rejects unknown extra credential keys", () => {

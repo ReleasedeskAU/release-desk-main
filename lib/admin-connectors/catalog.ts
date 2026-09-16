@@ -89,6 +89,8 @@ export const ADMIN_CONNECTOR_SOURCES: AdminConnectorSource[] = [
     }),
     check("include_prs", "Include pull requests", { default: true }),
     check("include_issues", "Include issues"),
+    check("include_overview", "Include repository overview and README", { default: true }),
+    check("include_commits", "Include commits (all branches, no diffs)", { default: true }),
     check("include_files", "Include documents"),
     text("branch", "Branch for documents", { optional: true }),
   ]),
@@ -110,6 +112,8 @@ export const ADMIN_CONNECTOR_SOURCES: AdminConnectorSource[] = [
     text("project_name", "Project name"),
     check("include_mrs", "Include merge requests", { default: true }),
     check("include_issues", "Include issues", { default: true }),
+    check("include_overview", "Include project overview and README", { default: true }),
+    check("include_commits", "Include commits (default branch, no diffs)", { default: true }),
   ]),
 
   src("bitbucket", "Bitbucket", "code", [
@@ -128,23 +132,19 @@ export const ADMIN_CONNECTOR_SOURCES: AdminConnectorSource[] = [
     text("projects", "Project keys", { optional: true, help: "Comma-separated." }),
     check("include_prs", "Include pull requests", {
       default: true,
-      passToEngine: false,
-      help: "Shown for planning. The running index engine only stores workspace and repo scope.",
+      help: "Open, merged, and declined pull request descriptions.",
     }),
     check("include_repo", "Include repository details", {
       default: true,
-      passToEngine: false,
-      help: "Shown for planning. Restart the index engine to index repo details.",
+      help: "Repository name, description, language, and default branch.",
     }),
     check("include_readme", "Include README", {
       default: true,
-      passToEngine: false,
-      help: "Shown for planning. Restart the index engine to index README.",
+      help: "README on the default branch.",
     }),
     check("include_commits", "Include commits", {
       default: true,
-      passToEngine: false,
-      help: "Shown for planning. Restart the index engine to index commit messages.",
+      help: "Commit messages on the default branch. Diffs are not stored.",
     }),
   ]),
 
@@ -186,7 +186,10 @@ export const ADMIN_CONNECTOR_SOURCES: AdminConnectorSource[] = [
   ]),
 
   src("jira", "Jira", "ticketing", [
-    text("jira_user_email", "Email", { optional: true, help: "Required for Jira Cloud." }),
+    text("jira_user_email", "Atlassian account email", {
+      optional: true,
+      help: "The Atlassian account that created this API token (required for Jira Cloud).",
+    }),
     password("jira_api_token", "API token"),
   ], [
     text("jira_base_url", "Jira base URL"),

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
+import { evaluateConnectorFieldCheck } from "@/lib/connectors/check-fields";
 import {
   assertBitbucketConnectorReachable,
+  assertBitbucketTokenReachable,
   BitbucketProbeError,
   firstBitbucketSlug,
   isStaleBitbucketEngineCheck,
@@ -57,6 +59,33 @@ describe("assertBitbucketConnectorReachable", () => {
         }),
       (err: unknown) => err instanceof BitbucketProbeError && err.message.includes("credentials")
     );
+  });
+});
+
+describe("assertBitbucketTokenReachable", () => {
+  it("accepts Bitbucket /user 200", async () => {
+    globalThis.fetch = (async () => new Response("{}", { status: 200 })) as typeof fetch;
+    await assertBitbucketTokenReachable("owner@example.com", "tok");
+  });
+
+  it("maps 401 to a credentials error", async () => {
+    globalThis.fetch = (async () => new Response("{}", { status: 401 })) as typeof fetch;
+    await assert.rejects(
+      () => assertBitbucketTokenReachable("owner@example.com", "tok"),
+      (err: unknown) => err instanceof BitbucketProbeError && err.message.includes("credentials")
+    );
+  });
+});
+
+describe("evaluateConnectorFieldCheck bitbucket", () => {
+  it("accepts credentials Bitbucket accepts", async () => {
+    globalThis.fetch = (async () => new Response("{}", { status: 200 })) as typeof fetch;
+    const result = await evaluateConnectorFieldCheck({
+      type: "bitbucket",
+      credentials: { email: "owner@example.com", token: "tok" },
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.message, "Bitbucket accepted these credentials.");
   });
 });
 

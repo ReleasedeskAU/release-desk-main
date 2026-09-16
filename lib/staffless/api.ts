@@ -4,11 +4,10 @@
 
 import { StafflessApiError, stafflessFetch } from "@/lib/staffless/client";
 import { planCatalogCreate, type CatalogCreateInput } from "@/lib/admin-connectors/plan-create";
-import {
-  assertBitbucketConnectorReachable,
-  BITBUCKET_ENGINE_STALE_CHECK,
-  isStaleBitbucketEngineCheck,
-} from "@/lib/bitbucket/probe";
+import { assertBitbucketConnectorReachable, assertBitbucketTokenReachable, BITBUCKET_ENGINE_STALE_CHECK, isStaleBitbucketEngineCheck } from "@/lib/bitbucket/probe";
+import { assertGithubTokenReachable } from "@/lib/github/probe";
+import { assertGitlabTokenReachable } from "@/lib/gitlab/probe";
+import { assertJiraTokenReachable } from "@/lib/jira/probe";
 import {
   isStafflessConnectorType,
   planStafflessConnector,
@@ -25,6 +24,7 @@ import {
   type ConnectorTableRow,
   type StafflessCcPairStatus,
 } from "@/lib/staffless/map-indexing-status";
+import { withReconnectIfCredentialRejected } from "@/lib/staffless/reconnect";
 import {
   mapSearchDocsToWorkItems,
   type StafflessSearchDoc,
@@ -105,7 +105,11 @@ export async function listStafflessConnectors(): Promise<ConnectorTableRow[]> {
       json: { get_all_connectors: true },
     }),
   ]);
-  return mergeCcPairsWithIndexingStatus(Array.isArray(pairs) ? pairs : [], flattenIndexingStatusPayload(statusPayload));
+  const rows = mergeCcPairsWithIndexingStatus(
+    Array.isArray(pairs) ? pairs : [],
+    flattenIndexingStatusPayload(statusPayload)
+  );
+  return markReconnectRequiredConnectors(rows);
 }
 
 export async function refreshStafflessConnectorStatus(): Promise<ConnectorTableRow[]> {
@@ -117,7 +121,32 @@ export async function findStafflessConnector(id: string): Promise<ConnectorTable
   return findRowByStafflessId(rows, id);
 }
 
+/**
+ * Live vendor check before the index engine stores credentials.
+ * GitHub uses /user/repos; Jira uses /myself (project list can 200 without a token).
+ */
+async function assertVendorCredentialsReachable(
+  type: string,
+  credentials: Record<string, string>,
+  baseUrl?: string | null
+): Promise<void> {
+  const source = type.trim().toLowerCase();
+  if (source === "github") {
+    await assertGithubTokenReachable(credentials.token ?? "");
+  }
+  if (source === "jira") {
+    await assertJiraTokenReachable(baseUrl ?? "", credentials.email ?? "", credentials.apiToken ?? "");
+  }
+  if (source === "gitlab") {
+    await assertGitlabTokenReachable(baseUrl ?? "", credentials.token ?? "");
+  }
+  if (source === "bitbucket") {
+    await assertBitbucketTokenReachable(credentials.email ?? "", credentials.token ?? "");
+  }
+}
+
 export async function createStafflessConnector(input: WizardCreateInput): Promise<{ id: number }> {
+  await assertVendorCredentialsReachable(input.type, input.credentials, input.baseUrl);
   const plan = planStafflessCreate(input);
   const credential = await stafflessFetch<IdResponse>("/api/manage/credential", {
     json: plan.credential,
@@ -201,6 +230,7 @@ export async function updateStafflessConnector(row: ConnectorTableRow, input: St
     });
   }
   if (input.credentials && Object.keys(input.credentials).length > 0) {
+    await assertVendorCredentialsReachable(row.type, input.credentials, input.baseUrl ?? row.baseUrl);
     const credentialId = requireSingleCredentialId(row.credentialIds);
     const plan = planStafflessCreate({
       name: input.name,
@@ -245,6 +275,24 @@ export async function runStafflessConnectorOnce(connectorId: number, fromBeginni
 export async function pruneStafflessConnector(row: ConnectorTableRow): Promise<void> {
   const ccPairId = requireCcPairId(row.ccPairId);
   await stafflessFetch(`/api/manage/admin/cc-pair/${ccPairId}/prune`, { method: "POST" });
+}
+
+/**
+ * For ERROR rows, read the newest index attempt. Credential 401s become reconnect-required.
+ * Other failures keep the generic table message. A failed attempt fetch does not fail the list.
+ */
+async function markReconnectRequiredConnectors(rows: ConnectorTableRow[]): Promise<ConnectorTableRow[]> {
+  return Promise.all(
+    rows.map(async (row) => {
+      if (row.status !== "ERROR") return row;
+      try {
+        const attempts = await listStafflessIndexAttempts(row);
+        return withReconnectIfCredentialRejected(row, attempts.items[0]?.errorMsg);
+      } catch {
+        return row;
+      }
+    })
+  );
 }
 
 /** Index attempts for this cc-pair. Newest first. @throws StafflessIdError when unbound. */

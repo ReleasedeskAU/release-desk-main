@@ -16,9 +16,13 @@ export class JiraSiteError extends Error {
  * @throws JiraSiteError when the URL is not a public HTTPS origin.
  */
 export function parsePublicJiraOrigin(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    throw new JiraSiteError("Enter your Jira site URL, like https://your-org.atlassian.net");
+  }
   let url: URL;
   try {
-    url = new URL(raw.trim());
+    url = new URL(trimmed);
   } catch {
     throw new JiraSiteError("Enter a valid Jira site URL, like https://your-org.atlassian.net");
   }

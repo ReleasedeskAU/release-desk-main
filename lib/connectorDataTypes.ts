@@ -11,9 +11,46 @@ export const CONNECTOR_DATA_TYPES: Record<string, ConnectorDataTypeOption[]> = {
     { value: "pull_requests", label: "Pull Requests", default: true },
     { value: "issues", label: "Issues", default: true },
     {
+      value: "repository_overview",
+      label: "Repository overview (README, description, counts)",
+      default: true,
+    },
+    {
+      value: "commits",
+      label: "Commits (message, files touched, line stats — all branches)",
+      default: true,
+    },
+    {
       value: "files",
       label: "Documents (markdown / README — not source code)",
       default: false,
+    },
+  ],
+  gitlab: [
+    { value: "pull_requests", label: "Merge requests", default: true },
+    { value: "issues", label: "Issues", default: true },
+    {
+      value: "repository_overview",
+      label: "Project overview (README, description)",
+      default: true,
+    },
+    {
+      value: "commits",
+      label: "Commits (message on the default branch)",
+      default: true,
+    },
+  ],
+  bitbucket: [
+    { value: "pull_requests", label: "Pull requests", default: true },
+    {
+      value: "repository_overview",
+      label: "Repository overview (README, description)",
+      default: true,
+    },
+    {
+      value: "commits",
+      label: "Commits (message on the default branch)",
+      default: true,
     },
   ],
 };

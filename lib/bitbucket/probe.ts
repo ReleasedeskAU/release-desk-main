@@ -74,6 +74,23 @@ function publicBitbucketStatusMessage(status: number): string {
   return "Bitbucket is unavailable";
 }
 
+export async function assertBitbucketTokenReachable(email: string, token: string): Promise<void> {
+  const trimmedEmail = email.trim();
+  const trimmedToken = token.trim();
+  if (!trimmedEmail || !trimmedToken) {
+    throw new BitbucketProbeError("Bitbucket rejected the credentials.", 401);
+  }
+  try {
+    const status = await bitbucketStatus("/user", trimmedEmail, trimmedToken);
+    if (status === 200) return;
+    throw new BitbucketProbeError(publicBitbucketStatusMessage(status === 404 ? 401 : status), status === 404 ? 401 : status);
+  } catch (err) {
+    if (err instanceof BitbucketProbeError) throw err;
+    logger.warn("bitbucket.token_probe_failed", { kind: err instanceof Error ? err.name : "unknown" });
+    throw new BitbucketProbeError("Bitbucket is unavailable", 502);
+  }
+}
+
 /**
  * Confirm the token can see the workspace or named repo before the engine pair.
  * @throws BitbucketProbeError when Bitbucket rejects auth or cannot see the target.

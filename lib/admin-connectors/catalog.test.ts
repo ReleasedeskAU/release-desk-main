@@ -62,8 +62,8 @@ describe("admin connector catalog", () => {
     assert.equal(matchesCatalogSearch(imap, "email"), true);
   });
 
-  it("routes Jira, GitHub, Teams, and IMAP through the Connectors wizard", () => {
-    for (const id of ["jira", "github", "teams", "imap"] as const) {
+  it("routes Jira, GitHub, GitLab, Bitbucket, Teams, and IMAP through the Connectors wizard", () => {
+    for (const id of ["jira", "github", "gitlab", "bitbucket", "teams", "imap"] as const) {
       assert.equal(usesGuidedOnboarding(id), true, id);
       assert.equal(guidedConnectorType(id), id);
     }
@@ -87,6 +87,10 @@ describe("admin connector catalog", () => {
     assert.ok(slack && github);
     assert.equal(isCatalogSourceReady(slack), true);
     assert.equal(isCatalogSourceReady(github), true);
+    const names = new Set(github.configFields.map((field) => field.name));
+    assert.equal(names.has("include_prs"), true);
+    assert.equal(names.has("include_overview"), true);
+    assert.equal(names.has("include_commits"), true);
     assert.equal(warnsFullAccount(slack), false);
     assert.equal(warnsFullAccount(github), false);
   });

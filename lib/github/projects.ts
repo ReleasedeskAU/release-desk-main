@@ -6,7 +6,7 @@ export type GithubRepoOption = {
   fullName: string;
   name: string;
   owner: string;
-  private: boolean;
+  private?: boolean;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {

@@ -103,6 +103,9 @@ describe("Ask catalog tools", () => {
     assert.ok(ALLOWED_COUNT_FIELDS.includes("object_type"));
     assert.ok(ALLOWED_COUNT_FIELDS.includes("num_files_changed"));
     assert.ok(ALLOWED_COUNT_FIELDS.includes("num_commits"));
+    assert.ok(ALLOWED_COUNT_FIELDS.includes("state"));
+    assert.ok(ALLOWED_COUNT_FIELDS.includes("merged"));
+    assert.equal((ALLOWED_COUNT_FIELDS as readonly string[]).includes("custom_fields"), false);
     for (const blocked of PII_TAG_FIELDS) {
       assert.equal(
         (ALLOWED_COUNT_FIELDS as readonly string[]).includes(blocked),
@@ -128,9 +131,12 @@ describe("Ask catalog tools", () => {
     assert.match(ASK_AGENT_SYSTEM, /title\/summary match/);
     assert.equal(/Q26|Q24|Q33/i.test(ASK_AGENT_SYSTEM), false);
     assert.match(ASK_AGENT_SYSTEM, /Never call that number "repos"/);
+    assert.match(ASK_AGENT_SYSTEM, /object_type=Commit/);
     assert.match(ASK_AGENT_SYSTEM, /num_files_changed/);
     assert.match(ASK_AGENT_SYSTEM, /list_indexed_sources/);
     assert.match(ASK_AGENT_SYSTEM, /Never claim a fixed vendor list/);
+    assert.equal(/GitLab issues are not Jira keys/.test(ASK_AGENT_SYSTEM), false);
+    assert.equal(/need a GitLab re-index from beginning/.test(ASK_AGENT_SYSTEM), false);
     const countTool = ASK_TOOLS.find((t) => t.type === "function" && t.function.name === ASK_TOOL_GET_VERIFIED_COUNT);
     assert.match(countTool && countTool.type === "function" ? countTool.function.description ?? "" : "", /not repositories/);
     assert.equal(/how many Jira tickets are indexed/i.test(ASK_AGENT_SYSTEM), false);

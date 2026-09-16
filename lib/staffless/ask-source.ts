@@ -14,6 +14,7 @@ export type AskIndexedSource = {
   id: string;
   label: string;
   docsIndexed: number;
+  reconnectRequired?: boolean;
 };
 
 export type AskSourceContext = {
@@ -42,7 +43,7 @@ export function askSourceLabel(id: string): string {
  * A source with 0 documents stays listed so Ask can say it is connected but empty.
  */
 export function uniqueAskSources(
-  rows: ReadonlyArray<{ type: string; docsIndexed: number }>
+  rows: ReadonlyArray<{ type: string; docsIndexed: number; reconnectRequired?: boolean }>
 ): AskIndexedSource[] {
   const byId = new Map<string, AskIndexedSource>();
   for (const row of rows) {
@@ -54,6 +55,7 @@ export function uniqueAskSources(
       id,
       label: askSourceLabel(id),
       docsIndexed: (prev?.docsIndexed ?? 0) + docs,
+      reconnectRequired: Boolean(prev?.reconnectRequired || row.reconnectRequired),
     });
   }
   return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
@@ -77,7 +79,11 @@ export function formatAskSourceInventory(sources: AskIndexedSource[]): string {
   if (sources.length === 0) {
     return "Indexed connector sources this turn: none listed. Use list_indexed_sources. Do not assume Jira, GitHub, or any other vendor.";
   }
-  const lines = sources.map((item) => `- ${item.id} (${item.label}): ${item.docsIndexed} searchable documents`);
+  const lines = sources.map((item) => {
+    const base = `- ${item.id} (${item.label}): ${item.docsIndexed} searchable documents`;
+    if (!item.reconnectRequired) return base;
+    return `${base}. Reconnect required — token rejected; indexed copies may be stale. Do not treat this source as current.`;
+  });
   return [
     "Indexed connector sources this turn (created connectors; 0 documents means connected but not yet searchable):",
     ...lines,

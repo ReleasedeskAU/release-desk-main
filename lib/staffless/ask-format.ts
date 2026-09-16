@@ -31,6 +31,8 @@ const FIELD_LABELS: Record<string, string> = {
   object_type: "Object type",
   num_files_changed: "Files changed",
   num_commits: "Commits",
+  state: "State",
+  merged: "Merged",
 };
 
 const FIELD_ORDER = Object.keys(FIELD_LABELS);
@@ -113,9 +115,26 @@ function buildFieldRows(doc: DocumentByKeyResult): [string, string][] {
     rows.push([FIELD_LABELS[key] ?? key, value]);
     seen.add(key);
   }
+  appendCustomFieldRows(rows, fields.custom_fields);
   const link = safeHttpUrl(doc.link);
   if (link) rows.push(["Link", `[Open ticket](${link})`]);
   return rows;
+}
+
+/** Extra table rows from stored `Name: value` custom field lines — not a tenant name list. */
+function appendCustomFieldRows(rows: [string, string][], raw: string | string[] | undefined): void {
+  const lines = Array.isArray(raw) ? raw : typeof raw === "string" && raw.trim() ? [raw] : [];
+  for (const line of lines) {
+    if (typeof line !== "string" || !line.trim()) continue;
+    const sep = line.indexOf(": ");
+    if (sep <= 0) {
+      rows.push(["Custom field", line.trim()]);
+      continue;
+    }
+    const label = line.slice(0, sep).trim();
+    const value = line.slice(sep + 2).trim();
+    if (label && value) rows.push([label, value]);
+  }
 }
 
 function formatFieldValue(raw: string | string[] | undefined): string {

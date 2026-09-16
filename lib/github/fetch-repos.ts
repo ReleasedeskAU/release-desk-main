@@ -9,6 +9,7 @@ const PAGE_SIZE = 100;
 const MAX_PAGES = 2;
 const TIMEOUT_MS = 15_000;
 const GITHUB_API = "https://api.github.com";
+export const GITHUB_TOKEN_MAX_CHARS = 500;
 
 export class GithubReposFetchError extends Error {
   readonly status: number;
@@ -19,12 +20,35 @@ export class GithubReposFetchError extends Error {
   }
 }
 
-function publicGithubHttpMessage(status: number): string {
-  if (status === 401) return "GitHub rejected that token";
-  if (status === 403) return "This GitHub token cannot list repositories";
+/** Client-safe GitHub status copy. Never include response bodies (may leak). */
+export function publicGithubHttpMessage(status: number): string {
+  if (status === 401) {
+    return "GitHub rejected that token. It is invalid or has been revoked.";
+  }
+  if (status === 403) {
+    return "This GitHub token cannot list repositories. Check repo access and organization SSO authorization.";
+  }
   if (status === 404) return "GitHub could not list repositories for this token";
   if (status >= 400 && status < 500) return "GitHub rejected the repository list request";
   return "GitHub is unavailable";
+}
+
+/**
+ * Authenticated GET to api.github.com. Caller must not log the token.
+ */
+export async function githubApiGet(pathWithQuery: string, token: string): Promise<Response> {
+  return fetch(`${GITHUB_API}${pathWithQuery}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "ReleaseDesk",
+    },
+    redirect: "error",
+    cache: "no-store",
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
 }
 
 /**
@@ -32,26 +56,13 @@ function publicGithubHttpMessage(status: number): string {
  * @throws GithubReposFetchError on non-2xx or timeout.
  */
 export async function fetchGithubRepos(token: string): Promise<GithubRepoOption[]> {
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-    "User-Agent": "ReleaseDesk",
-  };
-
   const out: GithubRepoOption[] = [];
   const seen = new Set<string>();
   for (let page = 1; page <= MAX_PAGES; page += 1) {
-    const url = `${GITHUB_API}/user/repos?per_page=${PAGE_SIZE}&page=${page}&affiliation=owner,collaborator,organization_member&sort=full_name`;
+    const path = `/user/repos?per_page=${PAGE_SIZE}&page=${page}&affiliation=owner,collaborator,organization_member&sort=full_name`;
     let body: unknown;
     try {
-      const res = await fetch(url, {
-        method: "GET",
-        headers,
-        redirect: "error",
-        cache: "no-store",
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
+      const res = await githubApiGet(path, token);
       const text = await res.text();
       if (res.status < 200 || res.status >= 300) {
         throw new GithubReposFetchError(

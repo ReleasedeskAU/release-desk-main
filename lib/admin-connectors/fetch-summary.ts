@@ -18,16 +18,30 @@ const FETCH_SUMMARIES: Record<string, FetchSummary> = {
     skips: ["Per-document access lists", "Attachments as separate files"],
   },
   github: {
-    fetches: ["Pull request title and description", "Issue title and description", "Labels, state, assignees, merge info", "Optional text files from a branch"],
-    skips: ["Issue and PR comments", "Review comments and reviews", "Diffs"],
+    fetches: [
+      "Pull request title and description (open and closed, including merged)",
+      "Issue title and description",
+      "Labels, state, assignees, merge info",
+      "Repository overview: description, default-branch commit count, branch names, contributors, open / merged / closed-without-merge PR counts, last-commit line stats",
+      "Commits on every branch (unique SHA): message, files touched, lines added/removed, file names",
+      "README on the default branch",
+      "Optional extra text files from a branch",
+    ],
+    skips: ["Issue and PR comments", "Review comments and reviews", "Commit diffs and source code", "Per-branch commit counts"],
   },
   testrail: {
     fetches: ["Test cases (title, steps, expected results)", "Preconditions", "Mapped custom fields"],
     skips: ["Runs, plans, and milestones", "Most unmapped custom fields"],
   },
   gitlab: {
-    fetches: ["Merge request descriptions", "Issue descriptions"],
-    skips: ["MR and issue comments", "Code files unless enabled on the server"],
+    fetches: [
+      "Merge request title and description",
+      "Issue title and description",
+      "Project overview: name, description, visibility, default branch",
+      "README on the default branch",
+      "Commit messages on the default branch (in the sync window)",
+    ],
+    skips: ["MR and issue comments", "Commit diffs and source code", "Other branches"],
   },
   bitbucket: {
     fetches: [
@@ -63,8 +77,14 @@ const FETCH_SUMMARIES: Record<string, FetchSummary> = {
     skips: ["CQL time filters (conflicts with sync window)"],
   },
   jira: {
-    fetches: ["Issue summary and description", "Comments", "Standard fields (status, assignee, labels, parent, links)", "Last updater and prior statuses"],
-    skips: ["Custom fields", "Attachments", "Worklogs, sprint, and story points"],
+    fetches: [
+      "Issue summary and description",
+      "Comments",
+      "Standard fields (status, assignee, labels, parent, links)",
+      "Last updater and prior statuses",
+      "Populated custom fields (name and value; Rank / lexorank skipped)",
+    ],
+    skips: ["Attachments", "Worklogs and sprint"],
   },
   salesforce: {
     fetches: ["Chosen objects (or Account by default)", "Configured child records", "Optional custom field JSON"],

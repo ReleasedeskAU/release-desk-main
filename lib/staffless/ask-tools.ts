@@ -239,7 +239,7 @@ export function buildAskTools(sourceIds: string[] = []): ChatCompletionTool[] {
     ),
     fnTool(
       ASK_TOOL_GET_VERIFIED_COUNT,
-      "Exact unique document count. Optional AND filters (issuetype + assignee + status_category) plus date ranges: created_from/to, resolved_from/to, updated_from/to, due_from/due_to/due_before (YYYY-MM-DD). Omit filters for a source total. source=github with no filter counts PRs/issues, not repositories — use list_distinct_values on repo for repository count. For names use contains (Kabir). For status_category use new, indeterminate, or done — not the status display name. Open/unresolved = count(status_category=new) + count(status_category=indeterminate). Resolved = count(status_category=done). Tickets missing status_category are not classified. Overdue = due_before=today AND status_category is new or indeterminate. Do not use for grouped breakdowns.",
+      "Exact unique document count. Optional AND filters (issuetype + assignee + status_category) plus date ranges: created_from/to, resolved_from/to, updated_from/to, due_from/due_to/due_before (YYYY-MM-DD). Omit filters for a source total. source=github with no filter counts every indexed GitHub document, not repositories — use list_distinct_values on repo for repository count; PRs use object_type=PullRequest plus state=open, merged=true, or state=closed AND merged=false; commits use object_type=Commit. For names use contains (Kabir). For status_category use new, indeterminate, or done — not the status display name. Open/unresolved = count(status_category=new) + count(status_category=indeterminate). Resolved = count(status_category=done). Tickets missing status_category are not classified. Overdue = due_before=today AND status_category is new or indeterminate. Do not use for grouped breakdowns.",
       {
         source: sourceProp,
         filter_field: fieldProp,
@@ -256,7 +256,7 @@ export function buildAskTools(sourceIds: string[] = []): ChatCompletionTool[] {
     ),
     fnTool(
       ASK_TOOL_DISTINCT,
-      "List stored values for one queryable field. Use before filtering on status, issuetype, object_type, or dates so you pass an exact stored string. For GitHub repository names or how-many-repos, use field=repo.",
+      "List stored values for one queryable field. Use before filtering on status, issuetype, object_type, or dates so you pass an exact stored string. Repository names use field=repo when that tag exists on the source.",
       { source: sourceProp, field: fieldProp },
       ["field"]
     ),

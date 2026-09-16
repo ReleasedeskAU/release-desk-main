@@ -57,4 +57,15 @@ describe("ask sources", () => {
     assert.match(text, /bitbucket/);
     assert.equal(/only have Jira and GitHub/.test(text), false);
   });
+
+  it("marks a source reconnect-required when any pair of that source is", () => {
+    const sources = uniqueAskSources([
+      { type: "jira", docsIndexed: 10, reconnectRequired: true },
+      { type: "jira", docsIndexed: 2 },
+    ]);
+    assert.equal(sources[0]?.reconnectRequired, true);
+    const text = formatAskSourceInventory(sources);
+    assert.match(text, /Reconnect required/);
+    assert.match(text, /Do not treat this source as current/);
+  });
 });

@@ -70,6 +70,8 @@ describe("planStafflessCreate", () => {
     assert.equal(plan.credential.credential_json.github_access_token, "ghp_example");
     assert.equal(plan.connector.connector_specific_config.include_issues, true);
     assert.equal(plan.connector.connector_specific_config.include_prs, false);
+    assert.equal(plan.connector.connector_specific_config.include_overview, false);
+    assert.equal(plan.connector.connector_specific_config.include_commits, false);
   });
 });
 

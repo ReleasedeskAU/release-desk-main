@@ -12,11 +12,21 @@ describe("admin connector fetch summary", () => {
     }
   });
 
-  it("keeps GitHub comments and Jira custom fields in the skip list", () => {
+  it("keeps GitHub comments skipped and Jira custom fields fetched", () => {
     const github = getFetchSummary("github");
     assert.ok(github.skips.some((item) => /comment/i.test(item)));
+    assert.ok(github.fetches.some((item) => /readme/i.test(item)));
+    assert.ok(github.fetches.some((item) => /commit count/i.test(item)));
+    assert.ok(github.fetches.some((item) => /unique SHA/i.test(item)));
+    assert.ok(github.fetches.some((item) => /merged/i.test(item)));
+    assert.ok(github.skips.some((item) => /diff/i.test(item)));
     const jira = getFetchSummary("jira");
-    assert.ok(jira.skips.some((item) => /custom field/i.test(item)));
+    assert.ok(jira.fetches.some((item) => /custom field/i.test(item)));
+    assert.equal(jira.skips.some((item) => /custom field/i.test(item)), false);
+    const gitlab = getFetchSummary("gitlab");
+    assert.ok(gitlab.fetches.some((item) => /readme/i.test(item)));
+    assert.ok(gitlab.fetches.some((item) => /commit/i.test(item)));
+    assert.ok(gitlab.skips.some((item) => /diff/i.test(item)));
     const bitbucket = getFetchSummary("bitbucket");
     assert.ok(bitbucket.fetches.some((item) => /readme/i.test(item)));
     assert.ok(bitbucket.fetches.some((item) => /commit/i.test(item)));

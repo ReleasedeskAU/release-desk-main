@@ -79,6 +79,8 @@ describe("planStafflessCreate", () => {
       include_prs: true,
       include_issues: false,
       include_files: false,
+      include_overview: false,
+      include_commits: false,
     });
   });
 
@@ -118,6 +120,99 @@ describe("planStafflessCreate", () => {
     });
     assert.equal(plan.connector.connector_specific_config.include_prs, true);
     assert.equal(plan.connector.connector_specific_config.include_issues, true);
+    assert.equal(plan.connector.connector_specific_config.include_overview, true);
+    assert.equal(plan.connector.connector_specific_config.include_commits, true);
+  });
+
+  it("sends include_overview when GitHub dataTypes include repository overview", () => {
+    const plan = planStafflessCreate({
+      name: "GH RD",
+      type: "github",
+      credentials: { token: "t" },
+      config: { repo: "acme/app", dataTypes: ["repository_overview"] },
+    });
+    assert.equal(plan.connector.connector_specific_config.include_overview, true);
+    assert.equal(plan.connector.connector_specific_config.include_commits, false);
+    assert.equal(plan.connector.connector_specific_config.include_prs, false);
+    assert.equal(plan.connector.connector_specific_config.include_issues, false);
+    assert.equal(plan.connector.connector_specific_config.include_files, false);
+  });
+
+  it("sends include_commits when GitHub dataTypes include commits", () => {
+    const plan = planStafflessCreate({
+      name: "GH RD",
+      type: "github",
+      credentials: { token: "t" },
+      config: { repo: "acme/app", dataTypes: ["commits"] },
+    });
+    assert.equal(plan.connector.connector_specific_config.include_commits, true);
+    assert.equal(plan.connector.connector_specific_config.include_prs, false);
+    assert.equal(plan.connector.connector_specific_config.include_overview, false);
+  });
+
+  it("builds GitLab credential, project paths, and include flags", () => {
+    const plan = planStafflessCreate({
+      name: "GL RD",
+      type: "gitlab",
+      baseUrl: "https://gitlab.com/",
+      credentials: { token: "glpat-example" },
+      config: { projects: ["acme/app", "acme/api"], dataTypes: ["pull_requests", "commits"] },
+      pollInterval: 15,
+    });
+    assert.equal(plan.credential.credential_json.gitlab_url, "https://gitlab.com");
+    assert.equal(plan.credential.credential_json.gitlab_access_token, "glpat-example");
+    assert.deepEqual(plan.connector.connector_specific_config, {
+      project_owner: "acme",
+      project_name: "app",
+      projects: "acme/app,acme/api",
+      include_mrs: true,
+      include_issues: false,
+      include_overview: false,
+      include_commits: true,
+      include_code_files: false,
+    });
+  });
+
+  it("builds Bitbucket workspace, slugs, and include flags from dataTypes", () => {
+    const plan = planStafflessCreate({
+      name: "BB RD",
+      type: "bitbucket",
+      credentials: { email: "a@b.com", token: "tok" },
+      config: { repos: ["acme/app", "acme/api"], dataTypes: ["pull_requests", "repository_overview"] },
+    });
+    assert.equal(plan.credential.credential_json.bitbucket_email, "a@b.com");
+    assert.deepEqual(plan.connector.connector_specific_config, {
+      workspace: "acme",
+      repositories: "app,api",
+      include_prs: true,
+      include_repo: true,
+      include_readme: true,
+      include_commits: false,
+    });
+  });
+
+  it("rejects GitLab without a project and Bitbucket without a repo", () => {
+    assert.throws(
+      () =>
+        planStafflessCreate({
+          name: "GL",
+          type: "gitlab",
+          baseUrl: "https://gitlab.com",
+          credentials: { token: "t" },
+          config: {},
+        }),
+      /at least one project/
+    );
+    assert.throws(
+      () =>
+        planStafflessCreate({
+          name: "BB",
+          type: "bitbucket",
+          credentials: { email: "a@b.com", token: "t" },
+          config: {},
+        }),
+      /at least one repository/
+    );
   });
 
   it("rejects Jenkins and incomplete GitHub repos", () => {

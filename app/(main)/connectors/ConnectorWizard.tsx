@@ -15,6 +15,7 @@ import {
 } from "@/lib/connectorDataTypes";
 import { indexingStartForRange, type JiraIndexingRangeId } from "@/lib/jira/project-keys";
 import { groupGithubReposByOwner } from "@/lib/github/repos";
+import { groupBitbucketReposByWorkspace } from "@/lib/bitbucket/repos";
 import { parseAllowedSenders } from "@/lib/imap/allowed-senders";
 import type { ImapFolderOption } from "@/lib/imap/mailboxes";
 import type { GithubRepoOption } from "@/lib/github/projects";
@@ -39,6 +40,35 @@ function initialGithubRepos(config: Record<string, unknown>): string[] {
     return config.repos.filter((v): v is string => typeof v === "string");
   }
   if (typeof config.repo === "string" && config.repo.includes("/")) return [config.repo.trim()];
+  return [];
+}
+
+function initialGitlabProjects(config: Record<string, unknown>): string[] {
+  if (Array.isArray(config.projects)) {
+    return config.projects.filter((v): v is string => typeof v === "string" && v.includes("/"));
+  }
+  if (typeof config.projects === "string" && config.projects.trim()) {
+    return config.projects.split(",").map((part) => part.trim()).filter((part) => part.includes("/"));
+  }
+  const owner = typeof config.projectOwner === "string" ? config.projectOwner.trim() : "";
+  const name = typeof config.projectName === "string" ? config.projectName.trim() : "";
+  if (owner && name) return [`${owner}/${name}`];
+  return [];
+}
+
+function initialBitbucketRepos(config: Record<string, unknown>): string[] {
+  if (Array.isArray(config.repos)) {
+    return config.repos.filter((v): v is string => typeof v === "string");
+  }
+  const workspace = typeof config.workspace === "string" ? config.workspace.trim() : "";
+  const slugs = typeof config.repositories === "string" ? config.repositories : "";
+  if (workspace && slugs.trim()) {
+    return slugs
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((slug) => (slug.includes("/") ? slug : `${workspace}/${slug}`));
+  }
   return [];
 }
 
@@ -70,7 +100,7 @@ function initialJiraKeys(config: Record<string, unknown>): string[] {
 }
 
 /**
- * Create or edit Jira, GitHub, Teams, or IMAP. Create posts to /api/connectors
+ * Create or edit Jira, GitHub, GitLab, Bitbucket, Teams, or IMAP. Create posts to /api/connectors
  * (engine credential + connector + pair). `initialType` skips the type picker
  * when opened from an Admin Connectors tile.
  */
@@ -97,7 +127,9 @@ export function ConnectorWizard({
     (existingConnector?.type as ConnectorTypeId) ?? initialType ?? null
   );
   const [name, setName] = useState(existingConnector?.name ?? "");
-  const [baseUrl, setBaseUrl] = useState(existingConnector?.baseUrl ?? "");
+  const [baseUrl, setBaseUrl] = useState(
+    existingConnector?.baseUrl ?? (initialType === "gitlab" ? "https://gitlab.com" : "")
+  );
   const [credentials, setCredentials] = useState<Record<string, string>>({});
   const [replaceCredentials, setReplaceCredentials] = useState(!isEdit);
   const [config, setConfig] = useState<Record<string, string>>(() => {
@@ -142,6 +174,21 @@ export function ConnectorWizard({
   const [allGithubRepos, setAllGithubRepos] = useState(existingConfig.allRepos === true);
   const [selectedGithubRepos, setSelectedGithubRepos] = useState<string[]>(() => initialGithubRepos(existingConfig));
   const [githubRange, setGithubRange] = useState<JiraIndexingRangeId>("6m");
+  const [gitlabProjects, setGitlabProjects] = useState<GithubRepoOption[]>([]);
+  const [gitlabLoading, setGitlabLoading] = useState(false);
+  const [gitlabError, setGitlabError] = useState<string | null>(null);
+  const [gitlabFilter, setGitlabFilter] = useState("");
+  const [selectedGitlabProjects, setSelectedGitlabProjects] = useState<string[]>(() =>
+    initialGitlabProjects(existingConfig)
+  );
+  const [bitbucketRepos, setBitbucketRepos] = useState<GithubRepoOption[]>([]);
+  const [bitbucketLoading, setBitbucketLoading] = useState(false);
+  const [bitbucketError, setBitbucketError] = useState<string | null>(null);
+  const [bitbucketFilter, setBitbucketFilter] = useState("");
+  const [allBitbucketRepos, setAllBitbucketRepos] = useState(existingConfig.allRepos === true && existingConnector?.type === "bitbucket");
+  const [selectedBitbucketRepos, setSelectedBitbucketRepos] = useState<string[]>(() =>
+    initialBitbucketRepos(existingConfig)
+  );
   const [imapFolders, setImapFolders] = useState<ImapFolderOption[]>([]);
   const [imapLoading, setImapLoading] = useState(false);
   const [imapError, setImapError] = useState<string | null>(null);
@@ -156,8 +203,10 @@ export function ConnectorWizard({
   const typeDef = useMemo(() => (selectedType ? getConnectorTypeDef(selectedType) : undefined), [selectedType]);
   const isJira = typeDef?.id === "jira";
   const isGitHub = typeDef?.id === "github";
+  const isGitlab = typeDef?.id === "gitlab";
+  const isBitbucket = typeDef?.id === "bitbucket";
   const isImap = typeDef?.id === "imap";
-  const hasSourcePicker = isJira || isGitHub || isImap;
+  const hasSourcePicker = isJira || isGitHub || isGitlab || isBitbucket || isImap;
   const dataTypeOptions = selectedType ? CONNECTOR_DATA_TYPES[selectedType] ?? [] : [];
   const totalSteps = hasSourcePicker ? 4 : 3;
 
@@ -165,13 +214,14 @@ export function ConnectorWizard({
     if (!name.trim()) return false;
     const configFilled = typeDef?.configFields.every((f) => f.optional || config[f.key]?.trim()) ?? true;
     if (isJira && !baseUrl.trim()) return false;
+    if (isGitlab && (!isEdit || replaceCredentials) && !baseUrl.trim()) return false;
     if (isImap && (!mailboxKind || !privacyAck)) return false;
     if (!isEdit || replaceCredentials) {
       const credsFilled = typeDef?.credentialFields.every((f) => credentials[f.key]?.trim());
       return Boolean(fieldCheck?.ok && credsFilled && configFilled);
     }
     return configFilled;
-  }, [name, baseUrl, isEdit, isJira, isImap, mailboxKind, privacyAck, replaceCredentials, typeDef, credentials, config, fieldCheck]);
+  }, [name, baseUrl, isEdit, isJira, isGitlab, isImap, mailboxKind, privacyAck, replaceCredentials, typeDef, credentials, config, fieldCheck]);
 
   const canProceedJiraProjects = allJiraProjects || selectedJiraKeys.length > 0;
   const githubOwners = new Set(selectedGithubRepos.map((full) => full.split("/")[0]).filter(Boolean));
@@ -179,6 +229,17 @@ export function ConnectorWizard({
   const canProceedGithubRepos = allGithubRepos
     ? Boolean(githubSingleOwner || (typeof existingConfig.repoOwner === "string" && existingConfig.repoOwner))
     : selectedGithubRepos.length > 0;
+  const canProceedGitlabProjects = selectedGitlabProjects.length > 0;
+  const bitbucketWorkspaces = new Set(selectedBitbucketRepos.map((full) => full.split("/")[0]).filter(Boolean));
+  const bitbucketSingleWorkspace =
+    bitbucketWorkspaces.size === 1
+      ? [...bitbucketWorkspaces][0]
+      : typeof existingConfig.workspace === "string"
+        ? existingConfig.workspace
+        : null;
+  const canProceedBitbucketRepos = allBitbucketRepos
+    ? Boolean(bitbucketSingleWorkspace)
+    : selectedBitbucketRepos.length > 0;
   const imapSenderCount = (() => {
     try {
       return parseAllowedSenders(imapAllowedSenders).length;
@@ -212,9 +273,13 @@ export function ConnectorWizard({
             ? { allProjects: true }
             : isGitHub
               ? { allRepos: true, repoOwner: "n" }
-              : isImap
-                ? { ...config, mailboxes: ["INBOX"] }
-                : { ...config, dataTypes },
+              : isGitlab
+                ? { projects: ["check/fields"] }
+                : isBitbucket
+                  ? { repos: ["n/n"] }
+                  : isImap
+                    ? { ...config, mailboxes: ["INBOX"] }
+                    : { ...config, dataTypes },
         }),
       });
       const body = (await res.json()) as { ok?: boolean; message?: string };
@@ -281,6 +346,54 @@ export function ConnectorWizard({
     }
   };
 
+  const loadGitlabProjects = async () => {
+    setGitlabLoading(true);
+    setGitlabError(null);
+    try {
+      const res = await fetch("/api/connectors/gitlab/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baseUrl, token: credentials.token }),
+      });
+      const body = (await res.json()) as { projects?: GithubRepoOption[]; error?: string };
+      if (!res.ok) {
+        setGitlabError(body.error ?? "Could not load GitLab projects");
+        setGitlabProjects([]);
+        return;
+      }
+      setGitlabProjects(body.projects ?? []);
+    } catch {
+      setGitlabError("Could not load GitLab projects");
+      setGitlabProjects([]);
+    } finally {
+      setGitlabLoading(false);
+    }
+  };
+
+  const loadBitbucketRepos = async () => {
+    setBitbucketLoading(true);
+    setBitbucketError(null);
+    try {
+      const res = await fetch("/api/connectors/bitbucket/repos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: credentials.email, token: credentials.token }),
+      });
+      const body = (await res.json()) as { repos?: GithubRepoOption[]; error?: string };
+      if (!res.ok) {
+        setBitbucketError(body.error ?? "Could not load Bitbucket repositories");
+        setBitbucketRepos([]);
+        return;
+      }
+      setBitbucketRepos(body.repos ?? []);
+    } catch {
+      setBitbucketError("Could not load Bitbucket repositories");
+      setBitbucketRepos([]);
+    } finally {
+      setBitbucketLoading(false);
+    }
+  };
+
   const loadImapFolders = async () => {
     setImapLoading(true);
     setImapError(null);
@@ -321,6 +434,14 @@ export function ConnectorWizard({
       setGithubError("Select at least one repository, or choose every repository for one owner");
       return;
     }
+    if (isGitlab && selectedGitlabProjects.length === 0) {
+      setGitlabError("Select at least one project");
+      return;
+    }
+    if (isBitbucket && !allBitbucketRepos && selectedBitbucketRepos.length === 0) {
+      setBitbucketError("Select at least one repository, or choose every repository in one workspace");
+      return;
+    }
     if (isImap && selectedImapFolders.length === 0) {
       setImapError("Select at least one folder. We never copy the whole mailbox.");
       return;
@@ -339,7 +460,7 @@ export function ConnectorWizard({
     }
     setImapSenderError(null);
     if (dataTypeOptions.length > 0 && dataTypes.length === 0) {
-      setDataTypesError("Select at least one of pull requests, issues, or documents");
+      setDataTypesError("Select at least one item to index");
       return;
     }
     setDataTypesError(null);
@@ -357,6 +478,14 @@ export function ConnectorWizard({
           ? { allRepos: true, repoOwner: githubOwner }
           : { repos: selectedGithubRepos }
         : {};
+      const gitlabConfig = isGitlab ? { projects: selectedGitlabProjects } : {};
+      const bitbucketOwner =
+        bitbucketSingleWorkspace || (typeof existingConfig.workspace === "string" ? existingConfig.workspace : "");
+      const bitbucketConfig = isBitbucket
+        ? allBitbucketRepos && bitbucketOwner
+          ? { allRepos: true, workspace: bitbucketOwner }
+          : { repos: selectedBitbucketRepos }
+        : {};
       const imapConfig = isImap
         ? {
             host: config.host,
@@ -372,13 +501,17 @@ export function ConnectorWizard({
           ...config,
           ...jiraConfig,
           ...githubConfig,
+          ...gitlabConfig,
+          ...bitbucketConfig,
           ...imapConfig,
           ...(dataTypeOptions.length > 0 ? { dataTypes } : {}),
         },
         pollInterval,
       };
-      if ((isJira || isGitHub || isImap) && !isEdit) {
-        payload.indexingStart = indexingStartForRange(isGitHub ? githubRange : isImap ? imapRange : jiraRange);
+      if ((isJira || isGitHub || isGitlab || isBitbucket || isImap) && !isEdit) {
+        payload.indexingStart = indexingStartForRange(
+          isGitHub || isGitlab || isBitbucket ? githubRange : isImap ? imapRange : jiraRange
+        );
       }
       if (isEdit && existingConnector) {
         const body: Record<string, unknown> = { ...payload };
@@ -408,6 +541,33 @@ export function ConnectorWizard({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               name: groups.length > 1 ? `${name.trim()} (${group.owner})` : name.trim(),
+              type: typeDef.id,
+              authType: typeDef.authType,
+              credentials,
+              config: groupConfig,
+              pollInterval,
+              indexingStart: indexingStartForRange(githubRange),
+            }),
+          });
+          if (!res.ok) {
+            alert(await readError(res));
+            return;
+          }
+        }
+      } else if (isBitbucket) {
+        const groups =
+          allBitbucketRepos && bitbucketOwner
+            ? [{ workspace: bitbucketOwner, names: [] as string[], allRepos: true }]
+            : groupBitbucketReposByWorkspace(selectedBitbucketRepos);
+        for (const group of groups) {
+          const groupConfig = group.allRepos
+            ? { allRepos: true, workspace: group.workspace, dataTypes }
+            : { repos: group.names.map((repoName) => `${group.workspace}/${repoName}`), dataTypes };
+          const res = await fetch("/api/connectors", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: groups.length > 1 ? `${name.trim()} (${group.workspace})` : name.trim(),
               type: typeDef.id,
               authType: typeDef.authType,
               credentials,
@@ -480,6 +640,7 @@ export function ConnectorWizard({
                     setSelectedType(t.id);
                     setPollInterval(t.defaultPollInterval);
                     setDataTypes(defaultDataTypesForType(t.id));
+                    if (t.id === "gitlab") setBaseUrl((prev) => prev.trim() || "https://gitlab.com");
                     setStep(2);
                   }}
                   className="rounded-xl border border-gray-200 p-4 text-left hover:border-[#2548C9] hover:bg-blue-50/30"
@@ -519,6 +680,26 @@ export function ConnectorWizard({
                     placeholder="https://your-org.atlassian.net"
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Site origin only, like https://your-org.atlassian.net. Use https. Do not put a username in the URL.
+                  </p>
+                </div>
+              )}
+              {isGitlab && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">GitLab URL</label>
+                  <input
+                    value={baseUrl}
+                    onChange={(e) => {
+                      setBaseUrl(e.target.value);
+                      setFieldCheck(null);
+                    }}
+                    placeholder="https://gitlab.com"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Site origin only, like https://gitlab.com. Use https. Do not put a username in the URL.
+                  </p>
                 </div>
               )}
               {isEdit && !replaceCredentials && (
@@ -630,12 +811,16 @@ export function ConnectorWizard({
               )}
               <p className="text-xs text-gray-500">
                 {isJira
-                  ? "Next we ask Jira for the real project list. Credentials are checked again when StaffLess starts copying tickets."
+                  ? "We check the site URL, Atlassian account email, and API token with Jira when you click Check fields. Wrong URL, email, or token cannot continue. Next we ask Jira for the real project list."
                   : isGitHub
-                    ? "Next we ask GitHub for the real repository list. Credentials are checked again when StaffLess starts copying."
-                    : isImap
-                      ? "Next we ask the mailbox for its folder list. You must pick folders — there is no whole-inbox option."
-                      : "StaffLess has no separate connection-test API. Credentials are verified on the next Sync Now."}
+                    ? "We check this token with GitHub when you click Check fields. Invalid, revoked, or tokens missing repo / Contents: Read cannot continue."
+                    : isGitlab
+                      ? "We check the GitLab URL and token when you click Check fields. Invalid or revoked tokens cannot continue. Next we load the live project list."
+                      : isBitbucket
+                        ? "We check the Atlassian account email and API token with Bitbucket when you click Check fields. Next we load the live repository list."
+                        : isImap
+                          ? "Next we ask the mailbox for its folder list. You must pick folders — there is no whole-inbox option."
+                          : "StaffLess has no separate connection-test API. Credentials are verified on the next Sync Now."}
               </p>
               <div className="flex justify-between pt-4">
                 {!hideTypeStep ? (
@@ -661,6 +846,17 @@ export function ConnectorWizard({
                     }
                     if (isGitHub && githubRepos.length === 0 && credentials.token?.trim()) {
                       void loadGithubRepos();
+                    }
+                    if (isGitlab && gitlabProjects.length === 0 && credentials.token?.trim() && baseUrl.trim()) {
+                      void loadGitlabProjects();
+                    }
+                    if (
+                      isBitbucket &&
+                      bitbucketRepos.length === 0 &&
+                      credentials.email?.trim() &&
+                      credentials.token?.trim()
+                    ) {
+                      void loadBitbucketRepos();
                     }
                     if (
                       isImap &&
@@ -723,6 +919,119 @@ export function ConnectorWizard({
                 <button
                   type="button"
                   disabled={!canProceedGithubRepos}
+                  onClick={() => setStep(4)}
+                  className="rounded-lg bg-[#2548C9] px-5 py-2 text-sm font-semibold text-white disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 3 && isGitlab && (
+            <div className="space-y-4">
+              <GithubRepoPicker
+                repos={gitlabProjects}
+                loading={gitlabLoading}
+                error={gitlabError}
+                filter={gitlabFilter}
+                onFilter={setGitlabFilter}
+                allRepos={false}
+                allReposOwner={null}
+                selectedFullNames={selectedGitlabProjects}
+                hideAllOption
+                heading="Which GitLab projects should we copy?"
+                loadLabel="Load projects"
+                loadingLabel="Asking GitLab for the project list…"
+                emptyLabel="No projects loaded yet. Click Load projects."
+                selectedHint={(count) =>
+                  `${count} selected — one connector covers them.`
+                }
+                onToggleAllRepos={() => undefined}
+                onToggleRepo={(fullName, checked) => {
+                  setSelectedGitlabProjects((prev) =>
+                    checked ? (prev.includes(fullName) ? prev : [...prev, fullName]) : prev.filter((n) => n !== fullName)
+                  );
+                }}
+                onReload={loadGitlabProjects}
+                canReload={Boolean(baseUrl.trim() && credentials.token?.trim())}
+              />
+              {isEdit && !replaceCredentials && (
+                <p className="text-xs text-gray-500">
+                  Enter credentials again (Replace credentials) to load the live list. Until then you can keep the
+                  projects already saved on this connector.
+                </p>
+              )}
+              <div className="flex justify-between pt-4">
+                <button type="button" onClick={() => setStep(2)} className="text-sm text-gray-600 hover:underline">
+                  Back
+                </button>
+                <button
+                  type="button"
+                  disabled={!canProceedGitlabProjects}
+                  onClick={() => setStep(4)}
+                  className="rounded-lg bg-[#2548C9] px-5 py-2 text-sm font-semibold text-white disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 3 && isBitbucket && (
+            <div className="space-y-4">
+              <GithubRepoPicker
+                repos={bitbucketRepos}
+                loading={bitbucketLoading}
+                error={bitbucketError}
+                filter={bitbucketFilter}
+                onFilter={setBitbucketFilter}
+                allRepos={allBitbucketRepos}
+                allReposOwner={bitbucketSingleWorkspace}
+                selectedFullNames={selectedBitbucketRepos}
+                heading="Which Bitbucket repositories should we copy?"
+                loadLabel="Load repositories"
+                loadingLabel="Asking Bitbucket for the repository list…"
+                emptyLabel="No repositories loaded yet. Click Load repositories."
+                allCheckedLabel={(workspace) => `Every repository in ${workspace}`}
+                allDisabledHint="Select repositories from one workspace to copy every repo in that workspace"
+                selectedHint={(count, ownerCount) =>
+                  `${count} selected${
+                    ownerCount > 1
+                      ? ` across ${ownerCount} workspaces — one connector is created per workspace.`
+                      : " — one connector covers them."
+                  }`
+                }
+                onToggleAllRepos={(value) => {
+                  setAllBitbucketRepos(value);
+                  if (value && bitbucketSingleWorkspace) {
+                    setSelectedBitbucketRepos((prev) =>
+                      prev.filter((full) => full.startsWith(`${bitbucketSingleWorkspace}/`))
+                    );
+                  }
+                }}
+                onToggleRepo={(fullName, checked) => {
+                  setAllBitbucketRepos(false);
+                  setSelectedBitbucketRepos((prev) =>
+                    checked ? (prev.includes(fullName) ? prev : [...prev, fullName]) : prev.filter((n) => n !== fullName)
+                  );
+                }}
+                onReload={loadBitbucketRepos}
+                canReload={Boolean(credentials.email?.trim() && credentials.token?.trim())}
+              />
+              {isEdit && !replaceCredentials && (
+                <p className="text-xs text-gray-500">
+                  Enter credentials again (Replace credentials) to load the live list. Until then you can keep the
+                  repositories already saved on this connector.
+                </p>
+              )}
+              <div className="flex justify-between pt-4">
+                <button type="button" onClick={() => setStep(2)} className="text-sm text-gray-600 hover:underline">
+                  Back
+                </button>
+                <button
+                  type="button"
+                  disabled={!canProceedBitbucketRepos}
                   onClick={() => setStep(4)}
                   className="rounded-lg bg-[#2548C9] px-5 py-2 text-sm font-semibold text-white disabled:opacity-40"
                 >
@@ -846,7 +1155,7 @@ export function ConnectorWizard({
                   <label className="block text-sm font-semibold text-gray-700">How far back should we copy?</label>
                   <p className="text-xs text-gray-500">
                     StaffLess skips items last updated before this date. It is not “created after this date.”
-                    {isGitHub || isImap ? " Default is last 6 months." : ""}
+                    {isGitHub || isGitlab || isBitbucket || isImap ? " Default is last 6 months." : ""}
                   </p>
                   {(
                     [
@@ -859,9 +1168,13 @@ export function ConnectorWizard({
                       <input
                         type="radio"
                         name="source-range"
-                        checked={(isGitHub ? githubRange : isImap ? imapRange : jiraRange) === id}
+                        checked={(isGitHub || isGitlab || isBitbucket ? githubRange : isImap ? imapRange : jiraRange) === id}
                         onChange={() =>
-                          isGitHub ? setGithubRange(id) : isImap ? setImapRange(id) : setJiraRange(id)
+                          isGitHub || isGitlab || isBitbucket
+                            ? setGithubRange(id)
+                            : isImap
+                              ? setImapRange(id)
+                              : setJiraRange(id)
                         }
                       />
                       <span>

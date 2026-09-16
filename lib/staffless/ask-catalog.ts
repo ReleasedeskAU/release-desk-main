@@ -188,7 +188,7 @@ function distinctNote(field: string): string {
     return "Each value is a repository owner/name. Repository count is the number of values, not total_indexed (that is document count).";
   }
   if (field === "object_type") {
-    return "GitHub stores PullRequest and Issue here. Document count filtered by object_type is PRs or issues, not repositories.";
+    return "GitHub stores PullRequest, Issue, Repository, Readme, Commit, and File here when those types are indexed. Filter by object_type; unfiltered GitHub count is not a repository census.";
   }
   return "Exact distinct indexed tag values, not a search sample.";
 }
@@ -311,8 +311,11 @@ function mapMatchingDocument(row: MatchingDocument | Record<string, unknown>): M
   };
 }
 
+/** Display-only tags. Not in the count/filter allow-list. */
+const DISPLAY_ONLY_FIELDS = new Set(["custom_fields"]);
+
 function sanitizeFields(raw: Record<string, unknown>): Record<string, string | string[]> {
-  const allowed = new Set<string>(ALLOWED_COUNT_FIELDS);
+  const allowed = new Set<string>([...ALLOWED_COUNT_FIELDS, ...DISPLAY_ONLY_FIELDS]);
   const blocked = new Set<string>(PII_TAG_FIELDS);
   const out: Record<string, string | string[]> = {};
   for (const [key, value] of Object.entries(raw)) {
