@@ -22,6 +22,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Native Scope tenant + download hardening:** Attachment GET responses send `X-Content-Type-Options: nosniff`. Scope pickers, grants, downloads, and release **list + detail** use the same session tenant (directory `User.organizationId`, else Clerk org). Detail still requires an exact `organizationId` match (null/other-org → 404). Assignment pickers are that same org only — not NULL-org users and not unscoped `/api/users`. Change-request approve `updateMany` requires both `requestId` and `scopeId`. Create/Edit Release Manager and Owner pickers use session-tenant `assignmentOptions` (release GET, or `GET /api/release-assignment-options` on create). The form maps those options through a client-safe helper so the preview build does not pull Prisma/Clerk server code into the browser bundle.
 
+### Fixed
+
+- **Bitbucket repo picker:** Load repositories no longer calls Bitbucket’s deprecated global `GET /2.0/repositories` list (scoped API tokens reject that). It lists workspaces, then repositories in each workspace. Auth unchanged. Token is not logged.
+
 ### Added
 
 - **GitLab issue fields:** Indexed GitLab issues and merge requests now store status (`opened`/`closed`/`merged`), created, updated, assignee when GitLab has one, due date when set, labels, project, and `repo` (same tag as GitHub, e.g. `ReleasedeskAU/website-test`). Priority is omitted — GitLab has no native priority. Empty assignee/due stay untagged (Ask should not invent them). Restart the index engine, then GitLab **Re-index from beginning**. Auth unchanged.
