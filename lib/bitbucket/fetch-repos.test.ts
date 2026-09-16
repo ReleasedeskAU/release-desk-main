@@ -10,61 +10,43 @@ afterEach(() => {
 });
 
 describe("fetchBitbucketRepos", () => {
-  it("lists repos from each workspace, not the deprecated global list", async () => {
+  it("lists GET /repositories/{workspace}, not a global or permissions list", async () => {
     const urls: string[] = [];
     globalThis.fetch = (async (input: RequestInfo | URL) => {
-      const url = String(input);
-      urls.push(url);
-      if (url.includes("/workspaces?")) {
-        return new Response(JSON.stringify({ values: [{ slug: "acme" }, { slug: "other" }] }), { status: 200 });
-      }
-      if (url.includes("/repositories/acme")) {
-        return new Response(JSON.stringify({ values: [{ full_name: "acme/app", name: "App" }] }), { status: 200 });
-      }
-      if (url.includes("/repositories/other")) {
-        return new Response(JSON.stringify({ values: [{ full_name: "other/lib", name: "Lib" }] }), { status: 200 });
-      }
-      return new Response("{}", { status: 500 });
+      urls.push(String(input));
+      return new Response(JSON.stringify({ values: [{ full_name: "acme/app", name: "App" }] }), {
+        status: 200,
+      });
     }) as typeof fetch;
 
-    const repos = await fetchBitbucketRepos("owner@example.com", "tok");
-    assert.deepEqual(
-      repos.map((r) => r.fullName),
-      ["acme/app", "other/lib"]
-    );
+    const repos = await fetchBitbucketRepos("owner@example.com", "tok", "acme");
+    assert.equal(repos[0]?.fullName, "acme/app");
+    assert.ok(urls[0]?.includes("/repositories/acme?"));
+    assert.equal(urls.some((u) => u.includes("/user/permissions")), false);
     assert.equal(urls.some((u) => /\/repositories\?role=member/.test(u)), false);
-    assert.ok(urls.some((u) => u.includes("/workspaces?")));
   });
 
-  it("maps 401 on workspaces to a credentials error", async () => {
-    globalThis.fetch = (async () => new Response("{}", { status: 401 })) as typeof fetch;
-    await assert.rejects(
-      () => fetchBitbucketRepos("owner@example.com", "tok"),
-      (err: unknown) => err instanceof BitbucketProbeError && err.message.includes("credentials")
-    );
-  });
-
-  it("says when the token cannot list workspaces", async () => {
+  it("maps workspace 404 to a slug hint, not a missing-scope hint", async () => {
     globalThis.fetch = (async () => new Response("{}", { status: 404 })) as typeof fetch;
     await assert.rejects(
-      () => fetchBitbucketRepos("owner@example.com", "tok"),
+      () => fetchBitbucketRepos("owner@example.com", "tok", "acme"),
       (err: unknown) =>
         err instanceof BitbucketProbeError &&
-        err.message.includes("cannot list repositories")
+        err.message.includes("workspace") &&
+        !err.message.includes("read:workspace")
     );
   });
 
-  it("says when workspaces exist but no repositories come back", async () => {
+  it("rejects a missing workspace before calling Bitbucket", async () => {
+    const urls: string[] = [];
     globalThis.fetch = (async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes("/workspaces?")) {
-        return new Response(JSON.stringify({ values: [{ slug: "acme" }] }), { status: 200 });
-      }
-      return new Response("{}", { status: 404 });
+      urls.push(String(input));
+      return new Response("{}", { status: 200 });
     }) as typeof fetch;
     await assert.rejects(
-      () => fetchBitbucketRepos("owner@example.com", "tok"),
-      (err: unknown) => err instanceof BitbucketProbeError && err.message.includes("no repositories")
+      () => fetchBitbucketRepos("owner@example.com", "tok", "  "),
+      BitbucketProbeError
     );
+    assert.equal(urls.length, 0);
   });
 });

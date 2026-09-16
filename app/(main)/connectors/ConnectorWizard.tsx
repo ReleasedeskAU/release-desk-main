@@ -189,6 +189,9 @@ export function ConnectorWizard({
   const [selectedBitbucketRepos, setSelectedBitbucketRepos] = useState<string[]>(() =>
     initialBitbucketRepos(existingConfig)
   );
+  const [bitbucketWorkspace, setBitbucketWorkspace] = useState(
+    typeof existingConfig.workspace === "string" ? existingConfig.workspace : ""
+  );
   const [imapFolders, setImapFolders] = useState<ImapFolderOption[]>([]);
   const [imapLoading, setImapLoading] = useState(false);
   const [imapError, setImapError] = useState<string | null>(null);
@@ -371,13 +374,18 @@ export function ConnectorWizard({
   };
 
   const loadBitbucketRepos = async () => {
+    const workspace = bitbucketWorkspace.trim();
+    if (!workspace) {
+      setBitbucketError("Enter the workspace slug from the repo URL (acme in bitbucket.org/acme/app).");
+      return;
+    }
     setBitbucketLoading(true);
     setBitbucketError(null);
     try {
       const res = await fetch("/api/connectors/bitbucket/repos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: credentials.email, token: credentials.token }),
+        body: JSON.stringify({ email: credentials.email, token: credentials.token, workspace }),
       });
       const body = (await res.json()) as { repos?: GithubRepoOption[]; error?: string };
       if (!res.ok) {
@@ -854,7 +862,8 @@ export function ConnectorWizard({
                       isBitbucket &&
                       bitbucketRepos.length === 0 &&
                       credentials.email?.trim() &&
-                      credentials.token?.trim()
+                      credentials.token?.trim() &&
+                      bitbucketWorkspace.trim()
                     ) {
                       void loadBitbucketRepos();
                     }
@@ -980,6 +989,21 @@ export function ConnectorWizard({
 
           {step === 3 && isBitbucket && (
             <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-800 mb-1">Workspace slug</label>
+                <input
+                  type="text"
+                  value={bitbucketWorkspace}
+                  onChange={(e) => setBitbucketWorkspace(e.target.value)}
+                  placeholder="acme"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  autoComplete="off"
+                />
+                <p className="text-xs text-gray-600 mt-1">
+                  From the repo URL: bitbucket.org/<span className="font-medium">this-part</span>/repo. Not the
+                  Bitbucket username.
+                </p>
+              </div>
               <GithubRepoPicker
                 repos={bitbucketRepos}
                 loading={bitbucketLoading}
@@ -1017,7 +1041,9 @@ export function ConnectorWizard({
                   );
                 }}
                 onReload={loadBitbucketRepos}
-                canReload={Boolean(credentials.email?.trim() && credentials.token?.trim())}
+                canReload={Boolean(
+                  credentials.email?.trim() && credentials.token?.trim() && bitbucketWorkspace.trim()
+                )}
               />
               {isEdit && !replaceCredentials && (
                 <p className="text-xs text-gray-500">

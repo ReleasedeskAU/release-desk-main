@@ -2,14 +2,16 @@ import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth/api";
+import { CatalogCreateError } from "@/lib/admin-connectors/plan-create";
 import { fetchBitbucketRepos } from "@/lib/bitbucket/fetch-repos";
-import { BitbucketProbeError } from "@/lib/bitbucket/probe";
+import { BitbucketProbeError, firstBitbucketSlug } from "@/lib/bitbucket/probe";
 import { logger } from "@/lib/logger";
 
 const bodySchema = z
   .object({
     email: z.string().trim().min(1).max(320),
     token: z.string().trim().min(1).max(500),
+    workspace: z.string().trim().min(1).max(80),
   })
   .strict();
 
@@ -30,7 +32,10 @@ export async function POST(req: Request) {
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json({ error: "Bitbucket email and API token are required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Bitbucket email, API token, and workspace slug are required" },
+      { status: 400 }
+    );
   }
 
   const now = Date.now();
@@ -42,9 +47,13 @@ export async function POST(req: Request) {
   lastCallByTokenHash.set(key, now);
 
   try {
-    const repos = await fetchBitbucketRepos(parsed.data.email, parsed.data.token);
+    const workspace = firstBitbucketSlug(parsed.data.workspace, "Workspace", true);
+    const repos = await fetchBitbucketRepos(parsed.data.email, parsed.data.token, workspace);
     return NextResponse.json({ repos });
   } catch (err) {
+    if (err instanceof CatalogCreateError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     if (err instanceof BitbucketProbeError) {
       logger.warn("api/connectors/bitbucket/repos", { status: err.status });
       return NextResponse.json({ error: err.message }, { status: err.status });

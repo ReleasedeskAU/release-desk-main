@@ -24,7 +24,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- **Bitbucket repo picker:** Load repositories no longer calls Bitbucket’s deprecated global `GET /2.0/repositories` list (scoped API tokens reject that). It lists workspaces, then repositories in each workspace. Auth unchanged. Token is not logged.
+- **Bitbucket repo picker:** Scoped API tokens cannot list every workspace. The wizard asks for the workspace slug, then loads `GET /2.0/repositories/{workspace}`. Auth unchanged. Token is not logged.
 
 ### Added
 
