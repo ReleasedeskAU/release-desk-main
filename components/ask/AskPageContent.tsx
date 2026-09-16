@@ -21,7 +21,7 @@ import {
   ASK_SEARCHING_LABEL,
 } from "@/lib/staffless/ask-copy";
 import type { AskGrounding } from "@/lib/staffless/ask-grounding";
-import { type AskEvent } from "@/lib/staffless/ask-packets";
+import { type AskEvent, type AskSource, mergeAskSources } from "@/lib/staffless/ask-packets";
 
 type AskMessage = {
   id: string;
@@ -30,6 +30,7 @@ type AskMessage = {
   limitedIndex: boolean;
   error: boolean;
   grounding: AskGrounding | null;
+  sources: AskSource[];
   createdAt: number;
 };
 
@@ -58,6 +59,7 @@ function emptyAssistant(id: string): AskMessage {
     limitedIndex: false,
     error: false,
     grounding: null,
+    sources: [],
     createdAt: Date.now(),
   };
 }
@@ -141,6 +143,7 @@ function useAskChat() {
           limitedIndex: false,
           error: false,
           grounding: null,
+          sources: [],
           createdAt: Date.now(),
         },
         emptyAssistant(assistantId),
@@ -250,6 +253,7 @@ function AskBubble({ message }: { message: AskMessage }) {
           </time>
         </div>
         {message.content ? <AskMarkdown content={message.content} /> : null}
+        {message.sources.length > 0 ? <AskSourceLinks sources={message.sources} /> : null}
         {message.error && !message.content && (
           <p className="text-[15px] leading-7 text-gray-600 dark:text-white/70">{ASK_PUBLIC_UNAVAILABLE}</p>
         )}
@@ -281,6 +285,28 @@ function AskLoadingCard({ grounding }: { grounding: AskGrounding | null }) {
       </div>
       <AISkeleton lines={4} />
     </div>
+  );
+}
+
+function AskSourceLinks({ sources }: { sources: AskSource[] }) {
+  const linked = sources.filter((source) => source.url);
+  if (linked.length === 0) return null;
+  return (
+    <ul className="mt-3 flex flex-wrap gap-2" aria-label="Sources">
+      {linked.map((source) => (
+        <li key={source.url ?? source.id}>
+          <a
+            href={source.url ?? undefined}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex max-w-full items-center rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-brand-700 hover:border-brand-300 hover:underline dark:border-[var(--border)] dark:bg-[var(--card)] dark:text-brand-300"
+          >
+            <span className="truncate">{source.title}</span>
+            <span className="ml-1.5 shrink-0 text-gray-400 dark:text-white/40">{source.source}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -444,9 +470,17 @@ function applyAskEvent(event: AskEvent | null, h: StreamHandlers): void {
       prev.map((m) => (m.id === h.assistantId ? { ...m, content: m.content + event.text } : m))
     );
   }
-  if (event.type === "sources" && event.sources.length === 0) {
+  if (event.type === "sources") {
+    if (event.sources.length === 0) {
+      h.setMessages((prev) =>
+        prev.map((m) => (m.id === h.assistantId ? { ...m, limitedIndex: true } : m))
+      );
+      return;
+    }
     h.setMessages((prev) =>
-      prev.map((m) => (m.id === h.assistantId ? { ...m, limitedIndex: true } : m))
+      prev.map((m) =>
+        m.id === h.assistantId ? { ...m, sources: mergeAskSources(m.sources, event.sources) } : m
+      )
     );
   }
   if (event.type === "error") {

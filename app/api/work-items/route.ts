@@ -67,7 +67,10 @@ export async function GET(req: Request) {
       })),
     });
   } catch (err) {
-    logger.error("api/work-items", { kind: err instanceof Error ? err.name : "unknown" });
+    logger.error("api/work-items", {
+      kind: err instanceof Error ? err.name : "unknown",
+      message: err instanceof Error ? err.message : undefined,
+    });
     return NextResponse.json(
       { error: stafflessPublicMessage(err) },
       { status: stafflessHttpStatus(err) }

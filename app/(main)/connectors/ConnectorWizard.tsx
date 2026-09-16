@@ -19,6 +19,8 @@ import { groupBitbucketReposByWorkspace } from "@/lib/bitbucket/repos";
 import { parseAllowedSenders } from "@/lib/imap/allowed-senders";
 import type { ImapFolderOption } from "@/lib/imap/mailboxes";
 import type { GithubRepoOption } from "@/lib/github/projects";
+import { localWizardFieldCheckError } from "@/lib/connectors/wizard-field-check";
+import { savedSlackChannelOptions, type SlackChannelOption } from "@/lib/slack/fetch-channels";
 import type { JiraProjectOption } from "@/lib/jira/projects";
 import type { ConnectorTableRow } from "@/lib/staffless/map-indexing-status";
 import { ConnectorTypeIcon } from "./ConnectorTypeIcon";
@@ -72,6 +74,22 @@ function initialBitbucketRepos(config: Record<string, unknown>): string[] {
   return [];
 }
 
+function initialSlackChannels(config: Record<string, unknown>): string[] {
+  if (Array.isArray(config.channels)) {
+    return config.channels
+      .filter((v): v is string => typeof v === "string")
+      .map((v) => v.trim().replace(/^#/, ""))
+      .filter(Boolean);
+  }
+  if (typeof config.channels === "string" && config.channels.trim()) {
+    return config.channels
+      .split(/[\n,]+/)
+      .map((part) => part.trim().replace(/^#/, ""))
+      .filter(Boolean);
+  }
+  return [];
+}
+
 function initialImapFolders(config: Record<string, unknown>): string[] {
   if (Array.isArray(config.mailboxes)) {
     return config.mailboxes.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
@@ -100,7 +118,7 @@ function initialJiraKeys(config: Record<string, unknown>): string[] {
 }
 
 /**
- * Create or edit Jira, GitHub, GitLab, Bitbucket, Teams, or IMAP. Create posts to /api/connectors
+ * Create or edit Jira, GitHub, GitLab, Bitbucket, Teams, IMAP, or Slack. Create posts to /api/connectors
  * (engine credential + connector + pair). `initialType` skips the type picker
  * when opened from an Admin Connectors tile.
  */
@@ -202,6 +220,16 @@ export function ConnectorWizard({
   const [privacyAck, setPrivacyAck] = useState(isEdit);
   const [imapAllowedSenders, setImapAllowedSenders] = useState(() => initialImapAllowedSenders(existingConfig));
   const [imapSenderError, setImapSenderError] = useState<string | null>(null);
+  const [slackChannels, setSlackChannels] = useState<SlackChannelOption[]>(() =>
+    savedSlackChannelOptions(initialSlackChannels(existingConfig))
+  );
+  const [slackLoading, setSlackLoading] = useState(false);
+  const [slackError, setSlackError] = useState<string | null>(null);
+  const [slackListAttempted, setSlackListAttempted] = useState(false);
+  const [slackFilter, setSlackFilter] = useState("");
+  const [selectedSlackChannels, setSelectedSlackChannels] = useState<string[]>(() =>
+    initialSlackChannels(existingConfig)
+  );
 
   const typeDef = useMemo(() => (selectedType ? getConnectorTypeDef(selectedType) : undefined), [selectedType]);
   const isJira = typeDef?.id === "jira";
@@ -209,7 +237,8 @@ export function ConnectorWizard({
   const isGitlab = typeDef?.id === "gitlab";
   const isBitbucket = typeDef?.id === "bitbucket";
   const isImap = typeDef?.id === "imap";
-  const hasSourcePicker = isJira || isGitHub || isGitlab || isBitbucket || isImap;
+  const isSlack = typeDef?.id === "slack";
+  const hasSourcePicker = isJira || isGitHub || isGitlab || isBitbucket || isImap || isSlack;
   const dataTypeOptions = selectedType ? CONNECTOR_DATA_TYPES[selectedType] ?? [] : [];
   const totalSteps = hasSourcePicker ? 4 : 3;
 
@@ -225,6 +254,17 @@ export function ConnectorWizard({
     }
     return configFilled;
   }, [name, baseUrl, isEdit, isJira, isGitlab, isImap, mailboxKind, privacyAck, replaceCredentials, typeDef, credentials, config, fieldCheck]);
+
+  const step2BlockedReason = useMemo(() => {
+    if (canProceedStep2) return null;
+    if (!name.trim()) return "Enter a display name to continue.";
+    if (!isEdit || replaceCredentials) {
+      const credsFilled = typeDef?.credentialFields.every((f) => credentials[f.key]?.trim());
+      if (!credsFilled) return "Fill in the required credentials, then click Check fields.";
+      if (!fieldCheck?.ok) return "Check fields first. Empty or invalid credentials cannot continue.";
+    }
+    return "Fill in the required fields to continue.";
+  }, [canProceedStep2, name, isEdit, replaceCredentials, typeDef, credentials, fieldCheck]);
 
   const canProceedJiraProjects = allJiraProjects || selectedJiraKeys.length > 0;
   const githubOwners = new Set(selectedGithubRepos.map((full) => full.split("/")[0]).filter(Boolean));
@@ -254,9 +294,22 @@ export function ConnectorWizard({
     selectedImapFolders.length > 0 &&
     imapSenderCount >= 0 &&
     (mailboxKind !== "personal" || imapSenderCount > 0);
+  const canProceedSlackChannels = selectedSlackChannels.length > 0;
 
   const checkFields = async () => {
-    if (!typeDef) return;
+    if (!typeDef) {
+      setFieldCheck({ ok: false, message: "Pick a source type first." });
+      return;
+    }
+    const local = localWizardFieldCheckError({
+      type: typeDef.id,
+      name,
+      credentials,
+    });
+    if (local) {
+      setFieldCheck(local);
+      return;
+    }
     setChecking(true);
     setFieldCheck(null);
     try {
@@ -282,13 +335,18 @@ export function ConnectorWizard({
                   ? { repos: ["n/n"] }
                   : isImap
                     ? { ...config, mailboxes: ["INBOX"] }
-                    : { ...config, dataTypes },
+                    : isSlack
+                      ? { channels: ["general"] }
+                      : { ...config, dataTypes },
         }),
       });
-      const body = (await res.json()) as { ok?: boolean; message?: string };
+      const body = (await res.json()) as { ok?: boolean; message?: string; error?: string };
       setFieldCheck({
         ok: body.ok === true,
-        message: body.message ?? (body.ok ? "Fields look valid." : "Check the required fields."),
+        message:
+          body.message ??
+          body.error ??
+          (body.ok ? "Fields look valid." : "Check the required fields."),
       });
     } catch {
       setFieldCheck({ ok: false, message: "Could not check fields. Try again." });
@@ -432,6 +490,31 @@ export function ConnectorWizard({
     }
   };
 
+  const loadSlackChannels = async () => {
+    setSlackLoading(true);
+    setSlackError(null);
+    try {
+      const res = await fetch("/api/connectors/slack/channels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: credentials.token }),
+      });
+      const body = (await res.json()) as { channels?: SlackChannelOption[]; error?: string };
+      if (!res.ok) {
+        setSlackError(body.error ?? "Could not load Slack channels");
+        setSlackChannels(savedSlackChannelOptions(selectedSlackChannels));
+        return;
+      }
+      setSlackChannels(body.channels ?? []);
+    } catch {
+      setSlackError("Could not load Slack channels");
+      setSlackChannels(savedSlackChannelOptions(selectedSlackChannels));
+    } finally {
+      setSlackListAttempted(true);
+      setSlackLoading(false);
+    }
+  };
+
   const save = async () => {
     if (!typeDef || !name.trim()) return;
     if (isJira && !allJiraProjects && selectedJiraKeys.length === 0) {
@@ -452,6 +535,10 @@ export function ConnectorWizard({
     }
     if (isImap && selectedImapFolders.length === 0) {
       setImapError("Select at least one folder. We never copy the whole mailbox.");
+      return;
+    }
+    if (isSlack && selectedSlackChannels.length === 0) {
+      setSlackError("Select at least one channel. Invite the bot to private channels first.");
       return;
     }
     if (isImap) {
@@ -502,6 +589,7 @@ export function ConnectorWizard({
             allowedSenders: imapAllowedSenders,
           }
         : {};
+      const slackConfig = isSlack ? { channels: selectedSlackChannels } : {};
       const payload: Record<string, unknown> = {
         name: name.trim(),
         baseUrl: baseUrl || undefined,
@@ -512,13 +600,14 @@ export function ConnectorWizard({
           ...gitlabConfig,
           ...bitbucketConfig,
           ...imapConfig,
+          ...slackConfig,
           ...(dataTypeOptions.length > 0 ? { dataTypes } : {}),
         },
         pollInterval,
       };
-      if ((isJira || isGitHub || isGitlab || isBitbucket || isImap) && !isEdit) {
+      if ((isJira || isGitHub || isGitlab || isBitbucket || isImap || isSlack) && !isEdit) {
         payload.indexingStart = indexingStartForRange(
-          isGitHub || isGitlab || isBitbucket ? githubRange : isImap ? imapRange : jiraRange
+          isGitHub || isGitlab || isBitbucket || isSlack ? githubRange : isImap ? imapRange : jiraRange
         );
       }
       if (isEdit && existingConnector) {
@@ -726,6 +815,23 @@ export function ConnectorWizard({
                   </button>
                 </div>
               )}
+              {isEdit && replaceCredentials && (
+                <p className="text-xs text-gray-500">
+                  Paste a new token and Check fields to continue, or{" "}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReplaceCredentials(false);
+                      setCredentials({});
+                      setFieldCheck({ ok: true });
+                    }}
+                    className="font-semibold text-[#2548C9] hover:underline"
+                  >
+                    keep saved credentials
+                  </button>
+                  .
+                </p>
+              )}
               {(!isEdit || replaceCredentials) &&
                 typeDef.credentialFields.map((field) => (
                   <div key={field.key}>
@@ -800,10 +906,10 @@ export function ConnectorWizard({
                 </div>
               )}
               {(!isEdit || replaceCredentials) && (
-                <div className="flex items-center gap-3 pt-2">
+                <div className="flex flex-col items-start gap-2 pt-2">
                   <button
                     type="button"
-                    onClick={checkFields}
+                    onClick={() => void checkFields()}
                     disabled={checking}
                     className="flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold hover:bg-gray-50"
                   >
@@ -811,9 +917,9 @@ export function ConnectorWizard({
                     Check fields
                   </button>
                   {fieldCheck && (
-                    <span className={`text-sm font-semibold ${fieldCheck.ok ? "text-green-700" : "text-red-700"}`}>
+                    <p className={`text-sm font-semibold ${fieldCheck.ok ? "text-green-700" : "text-red-700"}`}>
                       {fieldCheck.ok ? fieldCheck.message ?? "Fields look valid." : fieldCheck.message}
-                    </span>
+                    </p>
                   )}
                 </div>
               )}
@@ -825,10 +931,12 @@ export function ConnectorWizard({
                     : isGitlab
                       ? "We check the GitLab URL and token when you click Check fields. Invalid or revoked tokens cannot continue. Next we load the live project list."
                       : isBitbucket
-                        ? "We check the Atlassian account email and API token with Bitbucket when you click Check fields. Next we load the live repository list."
+                        ? "We check the Atlassian account email and API token with Bitbucket when you click Check fields. A username, wrong email, or wrong token cannot continue. Next we load the live repository list."
                         : isImap
                           ? "Next we ask the mailbox for its folder list. You must pick folders — there is no whole-inbox option."
-                          : "StaffLess has no separate connection-test API. Credentials are verified on the next Sync Now."}
+                          : isSlack
+                            ? "We check this bot token with Slack when you click Check fields. Invalid or revoked tokens cannot continue. Next we load channels the bot is already in — you must pick at least one."
+                            : "StaffLess has no separate connection-test API. Credentials are verified on the next Sync Now."}
               </p>
               <div className="flex justify-between pt-4">
                 {!hideTypeStep ? (
@@ -876,12 +984,18 @@ export function ConnectorWizard({
                     ) {
                       void loadImapFolders();
                     }
+                    if (isSlack && credentials.token?.trim()) {
+                      void loadSlackChannels();
+                    }
                   }}
                   className="rounded-lg bg-[#2548C9] px-5 py-2 text-sm font-semibold text-white disabled:opacity-40"
                 >
                   Next
                 </button>
               </div>
+              {step2BlockedReason ? (
+                <p className="text-sm font-semibold text-red-700 pt-2 text-right">{step2BlockedReason}</p>
+              ) : null}
             </div>
           )}
 
@@ -1174,6 +1288,61 @@ export function ConnectorWizard({
             </div>
           )}
 
+          {step === 3 && isSlack && (
+            <div className="space-y-4">
+              <GithubRepoPicker
+                repos={slackChannels}
+                loading={slackLoading}
+                error={slackError}
+                filter={slackFilter}
+                onFilter={setSlackFilter}
+                allRepos={false}
+                allReposOwner={null}
+                selectedFullNames={selectedSlackChannels}
+                hideAllOption
+                heading="Which Slack channels should we copy?"
+                loadLabel="Load channels"
+                loadingLabel="Asking Slack for channels the bot is in…"
+                emptyLabel={
+                  slackListAttempted
+                    ? "This bot is not in any channels yet. In Slack, invite the app to each channel you want indexed, then click Load channels."
+                    : "No channels loaded yet. Click Load channels. Invite the bot to each channel you want indexed first."
+                }
+                filterPlaceholder="Search by channel name"
+                selectedHint={(count) =>
+                  `${count} selected — threads in these channels are indexed. There is no whole-workspace option.`
+                }
+                onToggleAllRepos={() => undefined}
+                onToggleRepo={(fullName, checked) => {
+                  setSelectedSlackChannels((prev) =>
+                    checked ? (prev.includes(fullName) ? prev : [...prev, fullName]) : prev.filter((n) => n !== fullName)
+                  );
+                }}
+                onReload={loadSlackChannels}
+                canReload={Boolean(credentials.token?.trim())}
+              />
+              {isEdit && !replaceCredentials && (
+                <p className="text-xs text-gray-500">
+                  Enter credentials again (Replace credentials) to load the live list. Until then you can keep the
+                  channels already saved on this connector.
+                </p>
+              )}
+              <div className="flex justify-between pt-4">
+                <button type="button" onClick={() => setStep(2)} className="text-sm text-gray-600 hover:underline">
+                  Back
+                </button>
+                <button
+                  type="button"
+                  disabled={!canProceedSlackChannels}
+                  onClick={() => setStep(4)}
+                  className="rounded-lg bg-[#2548C9] px-5 py-2 text-sm font-semibold text-white disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+
           {((step === 3 && !hasSourcePicker) || (step === 4 && hasSourcePicker)) && typeDef && (
             <div className="space-y-4">
               {hasSourcePicker && !isEdit && (
@@ -1181,7 +1350,7 @@ export function ConnectorWizard({
                   <label className="block text-sm font-semibold text-gray-700">How far back should we copy?</label>
                   <p className="text-xs text-gray-500">
                     StaffLess skips items last updated before this date. It is not “created after this date.”
-                    {isGitHub || isGitlab || isBitbucket || isImap ? " Default is last 6 months." : ""}
+                    {isGitHub || isGitlab || isBitbucket || isImap || isSlack ? " Default is last 6 months." : ""}
                   </p>
                   {(
                     [
@@ -1194,9 +1363,9 @@ export function ConnectorWizard({
                       <input
                         type="radio"
                         name="source-range"
-                        checked={(isGitHub || isGitlab || isBitbucket ? githubRange : isImap ? imapRange : jiraRange) === id}
+                        checked={(isGitHub || isGitlab || isBitbucket || isSlack ? githubRange : isImap ? imapRange : jiraRange) === id}
                         onChange={() =>
-                          isGitHub || isGitlab || isBitbucket
+                          isGitHub || isGitlab || isBitbucket || isSlack
                             ? setGithubRange(id)
                             : isImap
                               ? setImapRange(id)
@@ -1223,7 +1392,9 @@ export function ConnectorWizard({
                       <input
                         type="checkbox"
                         checked={dataTypes.includes(opt.value)}
+                        disabled={opt.fixed}
                         onChange={(e) => {
+                          if (opt.fixed) return;
                           setDataTypesError(null);
                           setDataTypes((prev) =>
                             e.target.checked

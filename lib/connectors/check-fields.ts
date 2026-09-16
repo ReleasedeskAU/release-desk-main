@@ -1,5 +1,5 @@
 /**
- * Wizard Check fields: local payload shape, plus live GitHub / GitLab / Bitbucket / Jira token probes.
+ * Wizard Check fields: local payload shape, plus live GitHub / GitLab / Bitbucket / Slack / Jira token probes.
  * Never logs credentials or vendor response bodies.
  */
 
@@ -7,6 +7,7 @@ import { assertBitbucketTokenReachable } from "@/lib/bitbucket/probe";
 import { assertGithubTokenReachable } from "@/lib/github/probe";
 import { assertGitlabTokenReachable } from "@/lib/gitlab/probe";
 import { assertJiraTokenReachable } from "@/lib/jira/probe";
+import { assertSlackTokenReachable } from "@/lib/slack/probe";
 import { planStafflessCreate } from "@/lib/staffless/create-payload";
 
 export type ConnectorFieldCheckInput = {
@@ -22,9 +23,10 @@ export type ConnectorFieldCheckResult = {
 };
 
 /**
- * Validate wizard credentials. GitHub, GitLab, Bitbucket, and Jira are checked with the vendor now.
- * Jira names URL vs email vs token vs unreachable vs 401/403/404. Other sources
- * still check field shape only.
+ * Validate wizard credentials. GitHub, GitLab, Bitbucket, Slack, and Jira are checked with the vendor now.
+ * Jira names URL vs email vs token vs unreachable vs 401/403/404. Bitbucket names
+ * a non-email username vs blank token vs 401 (email and token together — Bitbucket
+ * does not say which field failed). Other sources still check field shape only.
  */
 export async function evaluateConnectorFieldCheck(
   input: ConnectorFieldCheckInput
@@ -46,6 +48,10 @@ export async function evaluateConnectorFieldCheck(
     if (type === "bitbucket") {
       await assertBitbucketTokenReachable(input.credentials.email ?? "", input.credentials.token ?? "");
       return { ok: true, message: "Bitbucket accepted these credentials." };
+    }
+    if (type === "slack") {
+      await assertSlackTokenReachable(input.credentials.token ?? "");
+      return { ok: true, message: "Slack accepted this token." };
     }
     planStafflessCreate({
       name: "test",

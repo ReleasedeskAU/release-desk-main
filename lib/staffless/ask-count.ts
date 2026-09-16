@@ -34,6 +34,8 @@ export const ALLOWED_COUNT_FIELDS = [
   "num_commits",
   "state",
   "merged",
+  "channel",
+  "author",
 ] as const;
 
 export const PII_TAG_FIELDS = ["assignee_email", "reporter_email"] as const;

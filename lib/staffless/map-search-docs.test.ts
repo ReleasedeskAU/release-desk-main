@@ -26,11 +26,13 @@ describe("mapSearchDocToWorkItem", () => {
     assert.equal(row.status, "In Progress");
     assert.equal(row.priority, "High");
     assert.equal(row.assignee, "Ada Lovelace");
+    assert.equal(row.author, null);
     assert.equal(row.statusCategory, null);
     assert.equal(row.releaseCode, null);
     assert.equal(row.source, "Jira");
     assert.equal(row.blockedBy, "RD-1");
     assert.equal(row.updatedAt, "2026-09-01T12:00:00Z");
+    assert.equal(row.link, null);
   });
 
   it("leaves Release empty and falls back when GitHub has no Jira fields", () => {
@@ -47,6 +49,7 @@ describe("mapSearchDocToWorkItem", () => {
     assert.equal(row.priority, null);
     assert.equal(row.source, "GitHub");
     assert.equal(row.assignee, "octo");
+    assert.equal(row.author, null);
     assert.equal(row.statusCategory, null);
   });
 
@@ -114,6 +117,38 @@ describe("mapSearchDocToWorkItem", () => {
       { document_id: "doc-1", semantic_identifier: "A: one again", source_type: "jira", metadata: { key: "A" } },
     ]);
     assert.equal(rows.length, 1);
+  });
+
+  it("keeps an http Slack permalink and drops javascript links", () => {
+    const slack = mapSearchDocToWorkItem({
+      document_id: "slack-1",
+      semantic_identifier: "hello",
+      source_type: "slack",
+      link: "https://releasedesk.slack.com/archives/C123/p1",
+      metadata: { channel: "social" },
+    });
+    assert.equal(slack.source, "Slack");
+    assert.equal(slack.link, "https://releasedesk.slack.com/archives/C123/p1");
+    assert.equal(slack.author, null);
+    assert.equal(slack.assignee, null);
+    const unsafe = mapSearchDocToWorkItem({
+      document_id: "slack-2",
+      semantic_identifier: "hi",
+      source_type: "slack",
+      link: "javascript:alert(1)",
+    });
+    assert.equal(unsafe.link, null);
+  });
+
+  it("maps Slack author from metadata.author and leaves assignee empty", () => {
+    const row = mapSearchDocToWorkItem({
+      document_id: "C1__1.2",
+      semantic_identifier: "Ada in #social: hello",
+      source_type: "slack",
+      metadata: { channel: "social", author: "Ada Lovelace" },
+    });
+    assert.equal(row.author, "Ada Lovelace");
+    assert.equal(row.assignee, null);
   });
 });
 

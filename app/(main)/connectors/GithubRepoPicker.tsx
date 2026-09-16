@@ -24,6 +24,7 @@ export function GithubRepoPicker({
   allDisabledHint = "Select repositories from one owner to copy every repo for that owner",
   hideAllOption = false,
   selectedHint,
+  filterPlaceholder = "Search by owner or name",
 }: {
   repos: GithubRepoOption[];
   loading: boolean;
@@ -45,6 +46,7 @@ export function GithubRepoPicker({
   allDisabledHint?: string;
   hideAllOption?: boolean;
   selectedHint?: (count: number, ownerCount: number) => string;
+  filterPlaceholder?: string;
 }) {
   const visible = repos.filter((repo) => {
     const q = filter.trim().toLowerCase();
@@ -88,7 +90,7 @@ export function GithubRepoPicker({
         value={filter}
         onChange={(e) => onFilter(e.target.value)}
         disabled={allRepos}
-        placeholder="Search by owner or name"
+        placeholder={filterPlaceholder}
         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50"
       />
       {error && <p className="text-sm text-red-700">{error}</p>}

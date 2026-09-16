@@ -167,8 +167,69 @@ function sourceLabel(sourceType: string): string {
   if (lower === "bitbucket") return "Bitbucket";
   if (lower === "teams") return "Microsoft Teams";
   if (lower === "imap") return "Email (IMAP)";
+  if (lower === "slack") return "Slack";
   if (!sourceType) return "Indexed";
   return sourceType.replace(/_/g, " ");
+}
+
+function sourceFromToolDoc(item: unknown): AskSource | null {
+  if (!item || typeof item !== "object") return null;
+  const doc = item as Record<string, unknown>;
+  const url = safeHttpUrl(doc.link);
+  if (!url) return null;
+  // Permalink/browse URL is the record identity. Slack catalog keys are often the
+  // shared channel label ("Unknown in #social"), which is not unique per message.
+  const title =
+    (typeof doc.title === "string" && doc.title.trim()) ||
+    (typeof doc.key === "string" && doc.key.trim()) ||
+    url;
+  const sourceRaw =
+    (typeof doc.source === "string" && doc.source) ||
+    (typeof doc.source_type === "string" && doc.source_type) ||
+    "";
+  return { id: url, title, url, source: sourceLabel(sourceRaw) };
+}
+
+/**
+ * Pull clickable record URLs out of an Ask tool JSON result.
+ * Only http(s) links are kept — no invented permalinks.
+ */
+export function sourcesFromAskToolResult(raw: string): AskSource[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    return [];
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
+  const rec = parsed as Record<string, unknown>;
+  const out: AskSource[] = [];
+  const seen = new Set<string>();
+  const push = (source: AskSource | null) => {
+    if (!source || seen.has(source.url ?? source.id)) return;
+    seen.add(source.url ?? source.id);
+    out.push(source);
+  };
+  if (Array.isArray(rec.documents)) {
+    for (const item of rec.documents) push(sourceFromToolDoc(item));
+  }
+  if (rec.found === true) push(sourceFromToolDoc(rec));
+  return out;
+}
+
+/**
+ * Append newly retrieved sources without duplicating the same record URL.
+ */
+export function mergeAskSources(existing: AskSource[], incoming: AskSource[]): AskSource[] {
+  const out = [...existing];
+  const seen = new Set(existing.map((source) => source.url ?? source.id));
+  for (const source of incoming) {
+    const key = source.url ?? source.id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(source);
+  }
+  return out;
 }
 
 /**

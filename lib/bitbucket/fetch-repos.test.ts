@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import { fetchBitbucketRepos } from "./fetch-repos";
-import { BitbucketProbeError } from "./probe";
+import { BITBUCKET_EMAIL_REQUIRED, BITBUCKET_INVALID_CREDENTIALS, BitbucketProbeError } from "./probe";
 
 const originalFetch = globalThis.fetch;
 
@@ -48,5 +48,28 @@ describe("fetchBitbucketRepos", () => {
       BitbucketProbeError
     );
     assert.equal(urls.length, 0);
+  });
+
+  it("rejects a username-shaped email without calling Bitbucket", async () => {
+    const urls: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      urls.push(String(input));
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    await assert.rejects(
+      () => fetchBitbucketRepos("hjgdakewajd", "tok", "acme"),
+      (err: unknown) =>
+        err instanceof BitbucketProbeError && err.message === BITBUCKET_EMAIL_REQUIRED
+    );
+    assert.equal(urls.length, 0);
+  });
+
+  it("maps 401 to a credentials message that names email and token", async () => {
+    globalThis.fetch = (async () => new Response("{}", { status: 401 })) as typeof fetch;
+    await assert.rejects(
+      () => fetchBitbucketRepos("owner@example.com", "tok", "acme"),
+      (err: unknown) =>
+        err instanceof BitbucketProbeError && err.message === BITBUCKET_INVALID_CREDENTIALS
+    );
   });
 });

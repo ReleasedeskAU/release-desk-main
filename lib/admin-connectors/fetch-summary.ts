@@ -116,7 +116,13 @@ const FETCH_SUMMARIES: Record<string, FetchSummary> = {
   },
   slack: {
     fetches: ["Channel threads (message text)", "Channel name and access"],
-    skips: ["File uploads", "Reactions", "Non-text blocks"],
+    skips: [
+      "File uploads",
+      "Reactions",
+      "Non-text blocks",
+      "Private channels the bot was not invited to",
+      "Public channels the bot cannot join (missing channels:join)",
+    ],
   },
   slab: {
     fetches: ["Posts (title and body text)"],

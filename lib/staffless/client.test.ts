@@ -22,5 +22,9 @@ describe("publicStafflessError", () => {
       publicStafflessError(400, "Unexpected Bitbucket error (status=404)."),
       "Bitbucket could not find that workspace."
     );
+    assert.equal(
+      publicStafflessError(400, "Unexpected Bitbucket error (http 401)."),
+      "Bitbucket rejected those credentials. Use the Atlassian account email that created this API token, and check the token."
+    );
   });
 });

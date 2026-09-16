@@ -1,4 +1,5 @@
 import { classifyStatusCategory } from "@/lib/jira-status-category";
+import { safeHttpUrl } from "@/lib/staffless/ask-packets";
 
 export type StafflessSearchDoc = {
   document_id?: string;
@@ -7,6 +8,7 @@ export type StafflessSearchDoc = {
   metadata?: Record<string, unknown> | null;
   updated_at?: string | null;
   link?: string | null;
+  blurb?: string | null;
 };
 
 export type WorkItemRow = {
@@ -18,9 +20,13 @@ export type WorkItemRow = {
   status: string;
   statusCategory: string | null;
   assignee: string | null;
+  /** Slack poster display name. Not Jira assignee. */
+  author: string | null;
   priority: string | null;
   blockedBy: string | null;
   source: string;
+  /** Vendor record URL when StaffLess stored one (Slack permalink, Jira browse). */
+  link: string | null;
   connectorId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -65,6 +71,7 @@ function sourceLabel(sourceType: string | undefined): string {
   if (lower === "teams") return "Microsoft Teams";
     if (lower === "imap") return "Email (IMAP)";
   if (lower === "gitlab") return "GitLab";
+  if (lower === "slack") return "Slack";
   return sourceType.replace(/_/g, " ");
 }
 
@@ -97,9 +104,11 @@ export function mapSearchDocToWorkItem(
     status: metaString(metadata, "status", "state") || "Indexed",
     statusCategory: classifyStatusCategory(metaString(metadata, "status_category")),
     assignee: metaString(metadata, "assignee", "user"),
+    author: metaString(metadata, "author"),
     priority: metaString(metadata, "priority"),
     blockedBy: metaString(metadata, "parent"),
     source: sourceLabel(doc.source_type),
+    link: safeHttpUrl(doc.link),
     connectorId,
     createdAt: metaString(metadata, "created", "created_at") || updatedAt,
     updatedAt,

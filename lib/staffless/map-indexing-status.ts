@@ -126,10 +126,17 @@ function bitbucketDataTypes(cfg: Record<string, unknown>): string[] {
   return types;
 }
 
+function slackDataTypes(cfg: Record<string, unknown>): string[] {
+  const types = ["threads"];
+  if (cfg.include_bot_messages === true) types.push("bot_messages");
+  return types;
+}
+
 function wizardDataTypes(type: string, cfg: Record<string, unknown>): string[] | undefined {
   if (type === "github") return githubDataTypes(cfg);
   if (type === "gitlab") return gitlabDataTypes(cfg);
   if (type === "bitbucket") return bitbucketDataTypes(cfg);
+  if (type === "slack") return slackDataTypes(cfg);
   return undefined;
 }
 
@@ -244,6 +251,14 @@ export function mapConnectorToTableRow(
       ? bitbucketSlugs.map((slug) => (slug.includes("/") ? slug : `${bitbucketWorkspace}/${slug}`))
       : undefined;
   const allBitbucketRepos = type === "bitbucket" && Boolean(bitbucketWorkspace) && bitbucketSlugs.length === 0;
+  const slackChannels =
+    type === "slack"
+      ? (Array.isArray(cfg.channels)
+          ? cfg.channels.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+          : typeof cfg.channels === "string"
+            ? cfg.channels.split(/[\n,]+/).map((part) => part.trim()).filter(Boolean)
+            : [])
+      : [];
   const dataTypes = wizardDataTypes(type, cfg);
 
   return {
@@ -274,6 +289,7 @@ export function mapConnectorToTableRow(
       ...(port ? { port } : {}),
       ...(mailboxes ? { mailboxes } : {}),
       ...(allowedSenders ? { allowedSenders } : {}),
+      ...(slackChannels.length > 0 ? { channels: slackChannels } : {}),
       ...(dataTypes ? { dataTypes } : {}),
     },
     pollInterval: connector.refresh_freq ? Math.max(1, Math.round(connector.refresh_freq / 60)) : 15,

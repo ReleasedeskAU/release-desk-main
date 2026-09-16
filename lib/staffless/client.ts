@@ -149,7 +149,7 @@ function mapKnownEngineRejection(engineBody?: string): string | null {
     lower.includes("bitbucket") &&
     (lower.includes("invalid or expired") || lower.includes("http 401"))
   ) {
-    return "Bitbucket rejected the credentials.";
+    return "Bitbucket rejected those credentials. Use the Atlassian account email that created this API token, and check the token.";
   }
   if (
     lower.includes("bitbucket") &&

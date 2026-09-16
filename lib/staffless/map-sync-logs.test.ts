@@ -233,6 +233,48 @@ describe("plainIndexErrorMessage", () => {
     );
     assert.equal(msg, "Could not reach Jira");
   });
+
+  it("replaces Slack conversations.join SDK text with a named message", () => {
+    const msg = plainIndexErrorMessage(
+      "The request to the Slack API failed. (url: https://slack.com/api/conversations.join)"
+    );
+    assert.equal(
+      msg,
+      "Slack could not join that channel. Invite the bot to private channels, or grant the bot the channels:join scope for public channels."
+    );
+    assert.ok(msg && !msg.includes("slack.com"));
+  });
+
+  it("maps Slack users.info SDK text to a bot-scope message", () => {
+    const msg = plainIndexErrorMessage(
+      "The request to the Slack API failed. (url: https://slack.com/api/users.info)"
+    );
+    assert.match(msg ?? "", /users:read/i);
+    assert.ok(msg && !msg.includes("slack.com"));
+  });
+
+  it("keeps a Slack dead-token slug instead of rewriting to join/history copy", () => {
+    const historyAuth = plainIndexErrorMessage(
+      "The request to the Slack API failed. (url: https://slack.com/api/conversations.history) {'ok': False, 'error': 'invalid_auth'}"
+    );
+    assert.equal(historyAuth, "Slack bot token was rejected (invalid_auth).");
+    const joinRevoked = plainIndexErrorMessage(
+      "The request to the Slack API failed. (url: https://slack.com/api/conversations.join) error=token_revoked"
+    );
+    assert.equal(joinRevoked, "Slack bot token was rejected (token_revoked).");
+    const genericRevoked = plainIndexErrorMessage(
+      "The request to the Slack API failed.\nThe server responded with: {'ok': False, 'error': 'not_authed'}"
+    );
+    assert.equal(genericRevoked, "Slack bot token was rejected (not_authed).");
+  });
+
+  it("still maps missing_scope history failures to the read-messages message", () => {
+    const msg = plainIndexErrorMessage(
+      "The request to the Slack API failed. (url: https://slack.com/api/conversations.history) error=missing_scope"
+    );
+    assert.match(msg ?? "", /channels:history/i);
+    assert.ok(msg && !msg.includes("invalid_auth") && !msg.includes("token_revoked"));
+  });
 });
 
 describe("mapIndexAttempt stack traces", () => {

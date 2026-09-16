@@ -11,6 +11,7 @@ import { parsePublicGitlabOrigin } from "@/lib/gitlab/site";
 import { allowedSenderValues } from "@/lib/imap/allowed-senders";
 import { parseImapMailboxNames } from "@/lib/imap/mailboxes";
 import { isJiraAllProjects, jiraProjectInJql, parseJiraProjectKeys } from "@/lib/jira/project-keys";
+import { parseSlackChannelNames } from "@/lib/slack/fetch-channels";
 
 export type WizardConnectorInput = {
   name: string;
@@ -45,11 +46,11 @@ export type StafflessCreatePlan = {
   };
 };
 
-const SUPPORTED = new Set(["jira", "github", "gitlab", "bitbucket", "teams", "imap"]);
+const SUPPORTED = new Set(["jira", "github", "gitlab", "bitbucket", "teams", "imap", "slack"]);
 const IMAP_DEFAULT_PORT = 993;
 const IMAP_MAX_PORT = 65535;
 
-/** True when StaffLess can create/update this source (jira, github, gitlab, bitbucket, teams, imap). */
+/** True when StaffLess can create/update this source (jira, github, gitlab, bitbucket, teams, imap, slack). */
 export function isStafflessConnectorType(type: string): boolean {
   return SUPPORTED.has(type.trim().toLowerCase());
 }
@@ -73,6 +74,7 @@ export function planStafflessConnector(input: WizardConnectorInput): StafflessCr
   if (type === "gitlab") return gitlabConnector(input, refresh);
   if (type === "bitbucket") return bitbucketConnector(input, refresh);
   if (type === "teams") return teamsConnector(input, refresh);
+  if (type === "slack") return slackConnector(input, refresh);
   return imapConnector(input, refresh);
 }
 
@@ -91,6 +93,7 @@ export function planStafflessCreate(input: WizardCreateInput): StafflessCreatePl
   if (type === "gitlab") return gitlabPlan(input, refresh);
   if (type === "bitbucket") return bitbucketPlan(input, refresh);
   if (type === "teams") return teamsPlan(input, refresh);
+  if (type === "slack") return slackPlan(input, refresh);
   return imapPlan(input, refresh);
 }
 
@@ -381,6 +384,40 @@ function bitbucketPlan(input: WizardCreateInput, refresh: number): StafflessCrea
       credential_json: { bitbucket_email: email, bitbucket_api_token: token },
     },
     connector: bitbucketConnector(input, refresh),
+  };
+}
+
+function slackConnector(input: WizardConnectorInput, refresh: number): StafflessCreatePlan["connector"] {
+  const channels = parseSlackChannelNames(input.config?.channels);
+  if (channels.length === 0) {
+    throw new Error("Slack needs a bot token and at least one channel");
+  }
+  const types = dataTypeList(input.config);
+  return {
+    name: input.name,
+    source: "slack",
+    input_type: "poll",
+    access_type: "public",
+    groups: [],
+    refresh_freq: refresh,
+    ...(input.indexingStart ? { indexing_start: input.indexingStart } : {}),
+    connector_specific_config: {
+      channels,
+      include_bot_messages: types != null && types.includes("bot_messages"),
+    },
+  };
+}
+
+function slackPlan(input: WizardCreateInput, refresh: number): StafflessCreatePlan {
+  const token = requiredText(input.credentials.token, "Slack needs a bot token and at least one channel");
+  return {
+    credential: {
+      name: `${input.name} credentials`,
+      source: "slack",
+      admin_public: true,
+      credential_json: { slack_bot_token: token },
+    },
+    connector: slackConnector(input, refresh),
   };
 }
 

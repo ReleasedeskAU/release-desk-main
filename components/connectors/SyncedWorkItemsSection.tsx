@@ -13,6 +13,7 @@ type WorkItemRow = {
   releaseCode: string | null;
   status: string;
   assignee: string | null;
+  author?: string | null;
   priority: string | null;
   blockedBy: string | null;
   source: string;
@@ -159,7 +160,7 @@ export function SyncedWorkItemsSection({ refreshKey = 0 }: { refreshKey?: number
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search key, title, assignee…"
+            placeholder="Search key, title, assignee, author…"
             className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 outline-none focus:border-[#2548C9] focus:ring-1 focus:ring-[#2548C9]"
           />
         </div>
@@ -229,6 +230,7 @@ export function SyncedWorkItemsSection({ refreshKey = 0 }: { refreshKey?: number
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Priority</th>
                   <th className="px-4 py-3">Assignee</th>
+                  <th className="px-4 py-3">Author</th>
                   <th className="px-4 py-3">Release</th>
                   <th className="px-4 py-3">Source</th>
                   <th className="px-4 py-3">Updated</th>
@@ -237,7 +239,7 @@ export function SyncedWorkItemsSection({ refreshKey = 0 }: { refreshKey?: number
               <tbody>
                 {!payload || payload.items.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-5 py-10 text-center text-gray-500">
+                    <td colSpan={10} className="px-5 py-10 text-center text-gray-500">
                       No indexed documents yet. Run <span className="font-semibold">Sync Now</span> on a
                       StaffLess AI connector, then refresh this table.
                     </td>
@@ -273,6 +275,9 @@ export function SyncedWorkItemsSection({ refreshKey = 0 }: { refreshKey?: number
                       </td>
                       <td className="border-b border-gray-200 px-4 py-3 text-gray-700 whitespace-nowrap">
                         {item.assignee ?? "—"}
+                      </td>
+                      <td className="border-b border-gray-200 px-4 py-3 text-gray-700 whitespace-nowrap">
+                        {item.author ?? "—"}
                       </td>
                       <td className="border-b border-gray-200 px-4 py-3 text-gray-700 whitespace-nowrap">
                         {item.releaseCode ?? "—"}

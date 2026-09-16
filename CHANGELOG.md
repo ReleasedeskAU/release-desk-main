@@ -24,9 +24,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Ask Slack channel vs keyword:** Ask tools now treat an empty search sample as a miss, not “no indexed documents.” Channel posts are listed with `list_documents_matching` (`source=slack`, `channel` without #). Search rows include the stored permalink. Auth unchanged.
+
+- **Ask Slack search blurb:** `search_indexed_documents` now returns a capped matched `blurb` plus `empty: true` when the sample missed, so Ask can quote indexed text instead of pointing at a link. Slack `author` is a separate queryable tag (not Jira assignee). Engine restart + Slack re-index required for names. `users.info` failures log the Slack error slug only (no token, email, or response body). Auth unchanged.
+
+- **Ask conflict / not-found / untrusted index text:** List rows include `source` so multi-source answers can say which connector said what. Search neighbors are labeled as neighbors; a named entity that misses catalog and search is "not in the index," not a similar document. Retrieved blurbs/titles are untrusted data, not instructions. Auth unchanged.
+
+- **Slack revoked token reconnect:** Index-error sanitization keeps Slack dead-token slugs (`invalid_auth`, `token_revoked`, `not_authed`, `account_inactive`, `token_expired`) instead of rewriting them to a join/history/scope message. Reconnect-required and Ask stale-source warning then match the same as Jira 401. Missing scope stays a scope message. Auth unchanged. No token or Slack response body in the UI.
+
+- **Slack extra thread-reply documents:** History rows that are replies but omit `thread_ts` no longer mint a second document keyed by the reply ts. Engine rebuild + Slack prune/re-index required. Auth unchanged.
+
+- **Ask source links:** Answers show clickable record URLs from tool results (Slack permalink, Jira browse). Only http(s) links. Slack chips are keyed by permalink so two posts in the same channel do not share a React key. Auth unchanged.
+
+- **Slack Check fields empty form:** Check fields with a blank display name and bot token now names both fields instead of doing nothing. The error sits under the button. Auth unchanged (editor). Token is not logged.
+
+- **Edit Slack Next:** Edit Connector Next stays available with saved credentials. Replace credentials can be undone. Saved channel names show on the picker without pasting the token. Auth unchanged (editor).
+
+- **Ask Slack channel posts:** Slack documents are queryable by `channel` (name without #). Catalog tag match is case-insensitive so existing `Channel` tags still count. Ask must not treat a long-question search sample as proof a channel is empty. Auth unchanged.
+
+- **Connectors / work-items 502:** Listing connectors no longer throws `dataTypes is not defined`. Slack (and GitHub/GitLab/Bitbucket) include flags are mapped before the table row is built. Auth unchanged.
+
+- **Slack channel picker:** Add Slack lists channels via `users.conversations` (channels the bot is in). Slack often omits `is_member` on list rows; those rows are kept. Empty list copy tells you to invite the app, not that the list was never loaded. Token is not logged. Auth unchanged (editor).
+
+- **Slack join errors:** Sync logs no longer show Slack’s raw `conversations.join` URL. The UI names invite vs `channels:join`. Catalog copy no longer claims empty channel list indexes every channel the bot “can see.” Auth unchanged.
+
+- **Bitbucket Check fields email:** A username (no `@`) is rejected with “Enter the Atlassian account email… — not a username” before calling Bitbucket. A live 401 names both the email and the token — Bitbucket does not say which field failed. Auth unchanged. Token and email are not logged.
+
 - **Bitbucket repo picker:** Scoped API tokens cannot list every workspace. The wizard asks for the workspace slug, then loads `GET /2.0/repositories/{workspace}`. Auth unchanged. Token is not logged.
 
 ### Added
+
+- **Slack guided onboarding:** Add Slack uses the same wizard as GitHub: Check fields (`auth.test`) → live list of channels the bot is already in → threads always on, bot messages off unless ticked → date range → save. At least one channel is required (no whole-workspace default). DMs are not listed. Files are not indexed. Token is not logged. Auth unchanged (editor).
 
 - **GitLab issue fields:** Indexed GitLab issues and merge requests now store status (`opened`/`closed`/`merged`), created, updated, assignee when GitLab has one, due date when set, labels, project, and `repo` (same tag as GitHub, e.g. `ReleasedeskAU/website-test`). Priority is omitted — GitLab has no native priority. Empty assignee/due stay untagged (Ask should not invent them). Restart the index engine, then GitLab **Re-index from beginning**. Auth unchanged.
 

@@ -1,4 +1,4 @@
-export type ConnectorTypeId = "jira" | "github" | "gitlab" | "bitbucket" | "teams" | "imap";
+export type ConnectorTypeId = "jira" | "github" | "gitlab" | "bitbucket" | "teams" | "imap" | "slack";
 
 export interface ConnectorFieldDef {
   key: string;
@@ -95,7 +95,7 @@ export const CONNECTOR_TYPES: ConnectorTypeDef[] = [
     available: true,
     defaultPollInterval: 15,
     setupHint:
-      "Use the Atlassian account email that created this API token, plus the token. Check fields verifies them with Bitbucket. Next we load the live repository list so you can pick one or more repos.",
+      "Use the Atlassian account email that created this API token, plus the token — not a Bitbucket username. Check fields verifies them with Bitbucket. A username, wrong email, or wrong token cannot continue. Next we load the live repository list so you can pick one or more repos.",
     credentialFields: [
       {
         key: "email",
@@ -183,6 +183,25 @@ export const CONNECTOR_TYPES: ConnectorTypeDef[] = [
         help: "Defaults to 993 (IMAPS) when left blank.",
       },
     ],
+    targetModel: "WorkItem",
+  },
+  {
+    id: "slack",
+    label: "Slack",
+    authType: "api_key",
+    available: true,
+    defaultPollInterval: 15,
+    setupHint:
+      "Use a Slack bot token (xoxb-). Check fields verifies it with Slack. Invalid or revoked tokens cannot continue. Next we load channels the bot is already in — invite the bot first. You must pick at least one channel. Reading messages also needs channels:history (and groups:history for private channels); reinstall the app after adding scopes.",
+    credentialFields: [
+      {
+        key: "token",
+        label: "Bot token",
+        type: "password",
+    help: "Slack bot token (xoxb-). Needs channels:read, channels:history, and users:read. Private channels also need groups:read, groups:history, and an invite. Reinstall the app after changing scopes, then paste the new token. Never pasted into Ask or logs.",
+      },
+    ],
+    configFields: [],
     targetModel: "WorkItem",
   },
 ];

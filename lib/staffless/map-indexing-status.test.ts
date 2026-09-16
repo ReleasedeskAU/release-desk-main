@@ -286,6 +286,30 @@ describe("mergeCcPairsWithIndexingStatus", () => {
     assert.deepEqual((rows[0].config as { dataTypes: string[] }).dataTypes, ["pull_requests", "commits"]);
     assert.equal(rows[0].authType, "basic_token");
   });
+
+  it("maps Slack channels and bot-message flag onto wizard dataTypes", () => {
+    const rows = mergeCcPairsWithIndexingStatus(
+      [
+        {
+          cc_pair_id: 9,
+          name: "Slack RD",
+          connector: {
+            id: 13,
+            name: "Slack RD",
+            source: "slack",
+            credential_ids: [1],
+            connector_specific_config: {
+              channels: ["all-releasedesk", "social"],
+              include_bot_messages: true,
+            },
+          },
+        },
+      ],
+      [{ cc_pair_id: 9, source: "slack", last_finished_status: "success" }]
+    );
+    assert.deepEqual((rows[0].config as { channels: string[] }).channels, ["all-releasedesk", "social"]);
+    assert.deepEqual((rows[0].config as { dataTypes: string[] }).dataTypes, ["threads", "bot_messages"]);
+  });
 });
 
 describe("mergeConnectorsWithStatus", () => {

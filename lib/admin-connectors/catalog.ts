@@ -258,7 +258,9 @@ export const ADMIN_CONNECTOR_SOURCES: AdminConnectorSource[] = [
   src("slack", "Slack", "messaging", [
     password("slack_bot_token", "Bot token"),
   ], [
-    list("channels", "Channels to include", { help: "Leave empty to index every channel the bot can see." }),
+    list("channels", "Channels to include", {
+      help: "Pick channels the bot is in. Invite the bot first. Reading messages needs channels:history (and groups:history for private). The Add Connector wizard requires at least one channel.",
+    }),
     check("channel_regex_enabled", "Treat include list as regex"),
     list("exclude_channels", "Channels to exclude"),
     check("exclude_channel_regex_enabled", "Treat exclude list as regex"),

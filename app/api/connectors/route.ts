@@ -3,7 +3,7 @@ import { requireRole } from "@/lib/auth/api";
 import { BitbucketProbeError } from "@/lib/bitbucket/probe";
 import { GithubReposFetchError } from "@/lib/github/fetch-repos";
 import { GitlabProbeError } from "@/lib/gitlab/probe";
-import { GitlabSiteError } from "@/lib/gitlab/site";
+import { SlackProbeError } from "@/lib/slack/probe";
 import { parseOptionalIndexingStart } from "@/lib/jira/project-keys";
 import { createStafflessConnector, listStafflessConnectors } from "@/lib/staffless/api";
 import { stafflessHttpStatus, stafflessPublicMessage } from "@/lib/staffless/client";
@@ -17,7 +17,10 @@ export async function GET() {
     const rows = await listStafflessConnectors();
     return NextResponse.json(rows);
   } catch (err) {
-    logger.error("api/connectors.GET", { kind: err instanceof Error ? err.name : "unknown" });
+    logger.error("api/connectors.GET", {
+      kind: err instanceof Error ? err.name : "unknown",
+      message: err instanceof Error ? err.message : undefined,
+    });
     return NextResponse.json(
       { error: stafflessPublicMessage(err) },
       { status: stafflessHttpStatus(err) }
@@ -63,8 +66,8 @@ export async function POST(req: Request) {
     if (
       err instanceof GithubReposFetchError ||
       err instanceof GitlabProbeError ||
-      err instanceof GitlabSiteError ||
-      err instanceof BitbucketProbeError
+      err instanceof BitbucketProbeError ||
+      err instanceof SlackProbeError
     ) {
       return NextResponse.json(
         { error: err.message },

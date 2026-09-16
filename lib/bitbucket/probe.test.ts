@@ -4,6 +4,9 @@ import { evaluateConnectorFieldCheck } from "@/lib/connectors/check-fields";
 import {
   assertBitbucketConnectorReachable,
   assertBitbucketTokenReachable,
+  BITBUCKET_EMAIL_REQUIRED,
+  BITBUCKET_INVALID_CREDENTIALS,
+  BITBUCKET_TOKEN_REQUIRED,
   BitbucketProbeError,
   firstBitbucketSlug,
   isStaleBitbucketEngineCheck,
@@ -47,7 +50,7 @@ describe("assertBitbucketConnectorReachable", () => {
     assert.ok(urls[0]?.includes("/repositories/testing-connector/website-test"));
   });
 
-  it("maps 401 on the repo to a credentials error", async () => {
+  it("maps 401 on the repo to a credentials error that names email and token", async () => {
     globalThis.fetch = (async () => new Response("{}", { status: 401 })) as typeof fetch;
     await assert.rejects(
       () =>
@@ -57,8 +60,33 @@ describe("assertBitbucketConnectorReachable", () => {
           workspace: "testing-connector",
           repositories: "website-test",
         }),
-      (err: unknown) => err instanceof BitbucketProbeError && err.message.includes("credentials")
+      (err: unknown) =>
+        err instanceof BitbucketProbeError &&
+        err.message === BITBUCKET_INVALID_CREDENTIALS &&
+        /Atlassian account email/i.test(err.message)
     );
+  });
+
+  it("rejects a username-shaped email without calling Bitbucket", async () => {
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    await assert.rejects(
+      () =>
+        assertBitbucketConnectorReachable({
+          email: "hjgdakewajd",
+          token: "tok",
+          workspace: "testing-connector",
+          repositories: "website-test",
+        }),
+      (err: unknown) =>
+        err instanceof BitbucketProbeError &&
+        err.status === 400 &&
+        err.message === BITBUCKET_EMAIL_REQUIRED
+    );
+    assert.equal(called, false);
   });
 });
 
@@ -68,12 +96,45 @@ describe("assertBitbucketTokenReachable", () => {
     await assertBitbucketTokenReachable("owner@example.com", "tok");
   });
 
-  it("maps 401 to a credentials error", async () => {
+  it("maps 401 to a credentials error that names email and token", async () => {
     globalThis.fetch = (async () => new Response("{}", { status: 401 })) as typeof fetch;
     await assert.rejects(
       () => assertBitbucketTokenReachable("owner@example.com", "tok"),
-      (err: unknown) => err instanceof BitbucketProbeError && err.message.includes("credentials")
+      (err: unknown) =>
+        err instanceof BitbucketProbeError && err.message === BITBUCKET_INVALID_CREDENTIALS
     );
+  });
+
+  it("rejects a username-shaped email without calling Bitbucket", async () => {
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    await assert.rejects(
+      () => assertBitbucketTokenReachable("hjgdakewajd", "tok"),
+      (err: unknown) =>
+        err instanceof BitbucketProbeError &&
+        err.status === 400 &&
+        err.message === BITBUCKET_EMAIL_REQUIRED
+    );
+    assert.equal(called, false);
+  });
+
+  it("rejects a blank token without calling Bitbucket", async () => {
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    await assert.rejects(
+      () => assertBitbucketTokenReachable("owner@example.com", "  "),
+      (err: unknown) =>
+        err instanceof BitbucketProbeError &&
+        err.status === 400 &&
+        err.message === BITBUCKET_TOKEN_REQUIRED
+    );
+    assert.equal(called, false);
   });
 });
 
@@ -86,6 +147,21 @@ describe("evaluateConnectorFieldCheck bitbucket", () => {
     });
     assert.equal(result.ok, true);
     assert.equal(result.message, "Bitbucket accepted these credentials.");
+  });
+
+  it("names a username-shaped email, not a generic credentials rejection", async () => {
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    const result = await evaluateConnectorFieldCheck({
+      type: "bitbucket",
+      credentials: { email: "hjgdakewajd", token: "tok" },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.message, BITBUCKET_EMAIL_REQUIRED);
+    assert.equal(called, false);
   });
 });
 

@@ -62,12 +62,11 @@ describe("admin connector catalog", () => {
     assert.equal(matchesCatalogSearch(imap, "email"), true);
   });
 
-  it("routes Jira, GitHub, GitLab, Bitbucket, Teams, and IMAP through the Connectors wizard", () => {
-    for (const id of ["jira", "github", "gitlab", "bitbucket", "teams", "imap"] as const) {
+  it("routes Jira, GitHub, GitLab, Bitbucket, Teams, IMAP, and Slack through the Connectors wizard", () => {
+    for (const id of ["jira", "github", "gitlab", "bitbucket", "teams", "imap", "slack"] as const) {
       assert.equal(usesGuidedOnboarding(id), true, id);
       assert.equal(guidedConnectorType(id), id);
     }
-    assert.equal(usesGuidedOnboarding("slack"), false);
     assert.equal(guidedConnectorType("confluence"), null);
   });
 
@@ -93,5 +92,8 @@ describe("admin connector catalog", () => {
     assert.equal(names.has("include_commits"), true);
     assert.equal(warnsFullAccount(slack), false);
     assert.equal(warnsFullAccount(github), false);
+    const channelsHelp = slack.configFields.find((field) => field.name === "channels")?.help ?? "";
+    assert.match(channelsHelp, /bot is in/i);
+    assert.equal(/bot can see/i.test(channelsHelp), false);
   });
 });

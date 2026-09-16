@@ -17,7 +17,7 @@ import {
 import { askGroundingFromTools } from "@/lib/staffless/ask-grounding";
 import type { DocumentByKeyResult } from "@/lib/staffless/ask-catalog";
 import { ASK_TOOL_DOCUMENT_BY_KEY, buildAskTools, dispatchAskTool } from "@/lib/staffless/ask-tools";
-import type { AskEvent } from "@/lib/staffless/ask-packets";
+import { sourcesFromAskToolResult, type AskEvent, type AskSource } from "@/lib/staffless/ask-packets";
 import { logger } from "@/lib/logger";
 
 export const ASK_MAX_TOOL_ROUNDS = 8;
@@ -59,7 +59,7 @@ export async function* runAskAgent(opts: {
   ];
 
   try {
-    const { text, tools } = await completeAskWithTools(openai, messages, {
+    const { text, tools, sources } = await completeAskWithTools(openai, messages, {
       allowTicketTable: opts.history.length === 0,
       indexedSources,
     });
@@ -72,6 +72,7 @@ export async function* runAskAgent(opts: {
     }
     const grounding = askGroundingFromTools(tools);
     if (grounding) yield { type: "grounding", kind: grounding };
+    if (sources.length > 0) yield { type: "sources", sources };
     yield { type: "text", text };
     yield { type: "done" };
   } catch (err) {
@@ -94,12 +95,14 @@ export async function completeAskWithTools(
   openai: OpenAI,
   messages: ChatCompletionMessageParam[],
   opts?: { allowTicketTable?: boolean; indexedSources?: AskIndexedSource[] }
-): Promise<{ text: string; tools: string[] }> {
+): Promise<{ text: string; tools: string[]; sources: AskSource[] }> {
   const allowTicketTable = opts?.allowTicketTable ?? true;
   const indexedSources = opts?.indexedSources ?? [];
   const toolDefs = buildAskTools(indexedSources.map((item) => item.id));
   const sourceContext = { sources: indexedSources };
   const tools: string[] = [];
+  const sources: AskSource[] = [];
+  const seenSource = new Set<string>();
   let lastDocument: DocumentByKeyResult | null = null;
   for (let round = 0; round < ASK_MAX_TOOL_ROUNDS; round += 1) {
     const res = await openai.chat.completions.create({
@@ -111,10 +114,14 @@ export async function completeAskWithTools(
       max_tokens: 1600,
     });
     const choice = res.choices[0]?.message;
-    if (!choice) return { text: "", tools };
+    if (!choice) return { text: "", tools, sources };
     const calls = choice.tool_calls ?? [];
     if (calls.length === 0) {
-      return { text: finalAskText(tools, lastDocument, choice.content, allowTicketTable), tools };
+      return {
+        text: finalAskText(tools, lastDocument, choice.content, allowTicketTable),
+        tools,
+        sources,
+      };
     }
 
     messages.push(choice);
@@ -131,6 +138,12 @@ export async function completeAskWithTools(
       if (call.function.name === ASK_TOOL_DOCUMENT_BY_KEY) {
         lastDocument = parseDocumentByKeyResult(dispatched.result);
       }
+      for (const source of sourcesFromAskToolResult(dispatched.result)) {
+        const key = source.url ?? source.id;
+        if (seenSource.has(key)) continue;
+        seenSource.add(key);
+        sources.push(source);
+      }
       messages.push({
         role: "tool",
         tool_call_id: call.id,
@@ -138,7 +151,7 @@ export async function completeAskWithTools(
       });
     }
   }
-  return { text: "", tools };
+  return { text: "", tools, sources };
 }
 
 /**

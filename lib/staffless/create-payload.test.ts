@@ -191,6 +191,35 @@ describe("planStafflessCreate", () => {
     });
   });
 
+  it("builds Slack channels and bot-message flag from dataTypes", () => {
+    const plan = planStafflessCreate({
+      name: "Ops Slack",
+      type: "slack",
+      credentials: { token: "xoxb-example" },
+      config: { channels: ["#ops", "cab"], dataTypes: ["threads", "bot_messages"] },
+      indexingStart: "2026-03-08T00:00:00.000Z",
+    });
+    assert.equal(plan.credential.credential_json.slack_bot_token, "xoxb-example");
+    assert.deepEqual(plan.connector.connector_specific_config, {
+      channels: ["ops", "cab"],
+      include_bot_messages: true,
+    });
+    assert.equal(plan.connector.indexing_start, "2026-03-08T00:00:00.000Z");
+  });
+
+  it("rejects Slack without a channel", () => {
+    assert.throws(
+      () =>
+        planStafflessCreate({
+          name: "Ops Slack",
+          type: "slack",
+          credentials: { token: "xoxb-example" },
+          config: { channels: [] },
+        }),
+      /at least one channel/
+    );
+  });
+
   it("rejects GitLab without a project and Bitbucket without a repo", () => {
     assert.throws(
       () =>

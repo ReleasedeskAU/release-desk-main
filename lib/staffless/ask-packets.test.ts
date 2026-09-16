@@ -7,7 +7,9 @@ import {
   buildSendChatMessageBody,
   mapStafflessLineToAskEvents,
   mapStafflessPacket,
+  mergeAskSources,
   safeHttpUrl,
+  sourcesFromAskToolResult,
   STAFFLESS_CREATE_SESSION_PATH,
   STAFFLESS_SEND_CHAT_PATH,
 } from "./ask-packets";
@@ -109,6 +111,55 @@ describe("applyCitation / safeHttpUrl", () => {
     assert.equal(safeHttpUrl("https://ok.example/x"), "https://ok.example/x");
     assert.equal(safeHttpUrl("javascript:alert(1)"), null);
     assert.equal(safeHttpUrl("JIRA_RD-12"), null);
+  });
+
+  it("extracts http record links from Ask tool JSON and skips invented schemes", () => {
+    const sources = sourcesFromAskToolResult(
+      JSON.stringify({
+        documents: [
+          {
+            id: "slack-1",
+            title: "hello",
+            source: "Slack",
+            link: "https://releasedesk.slack.com/archives/C123/p1",
+          },
+          { id: "skip", title: "no url", source: "Slack" },
+          { id: "bad", title: "xss", link: "javascript:alert(1)" },
+        ],
+      })
+    );
+    assert.equal(sources.length, 1);
+    assert.equal(sources[0]?.url, "https://releasedesk.slack.com/archives/C123/p1");
+    assert.equal(sources[0]?.id, "https://releasedesk.slack.com/archives/C123/p1");
+    assert.equal(sources[0]?.source, "Slack");
+    const merged = mergeAskSources(sources, sources);
+    assert.equal(merged.length, 1);
+  });
+
+  it("keeps two Slack posts that share a channel title but have different permalinks", () => {
+    const sources = sourcesFromAskToolResult(
+      JSON.stringify({
+        documents: [
+          {
+            id: "Unknown in #social",
+            key: "Unknown in #social",
+            title: "Unknown in #social",
+            source: "Slack",
+            link: "https://releasedesk.slack.com/archives/C123/p111",
+          },
+          {
+            id: "Unknown in #social",
+            key: "Unknown in #social",
+            title: "Unknown in #social",
+            source: "Slack",
+            link: "https://releasedesk.slack.com/archives/C123/p222",
+          },
+        ],
+      })
+    );
+    assert.equal(sources.length, 2);
+    assert.equal(sources[0]?.id, "https://releasedesk.slack.com/archives/C123/p111");
+    assert.equal(sources[1]?.id, "https://releasedesk.slack.com/archives/C123/p222");
   });
 });
 

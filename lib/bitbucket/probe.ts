@@ -4,6 +4,7 @@
  */
 
 import { CatalogCreateError } from "@/lib/admin-connectors/plan-create";
+import { looksLikeAtlassianEmail } from "@/lib/connectors/atlassian-email";
 import { logger } from "@/lib/logger";
 
 const BITBUCKET_API = "https://api.bitbucket.org/2.0";
@@ -12,6 +13,12 @@ const SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 export const BITBUCKET_ENGINE_STALE_CHECK =
   "Bitbucket accepted these credentials. Restart the index engine and try again.";
+
+export const BITBUCKET_EMAIL_REQUIRED =
+  "Enter the Atlassian account email that created this API token — not a username.";
+export const BITBUCKET_TOKEN_REQUIRED = "Enter a Bitbucket API token.";
+export const BITBUCKET_INVALID_CREDENTIALS =
+  "Bitbucket rejected those credentials. Use the Atlassian account email that created this API token, and check the token.";
 
 export class BitbucketProbeError extends Error {
   readonly status: number;
@@ -47,6 +54,26 @@ export function firstBitbucketSlug(raw: unknown, label: string, required: boolea
   return text;
 }
 
+/**
+ * Require an Atlassian email shape plus a non-empty token before calling Bitbucket.
+ * Bitbucket 401 cannot name which field failed; a username is rejected here instead.
+ * @throws BitbucketProbeError when email is not an email or the token is blank.
+ */
+export function assertBitbucketEmailAndToken(
+  email: string,
+  token: string
+): { email: string; token: string } {
+  const trimmedEmail = email.trim();
+  const trimmedToken = token.trim();
+  if (!trimmedEmail || !looksLikeAtlassianEmail(trimmedEmail)) {
+    throw new BitbucketProbeError(BITBUCKET_EMAIL_REQUIRED, 400);
+  }
+  if (!trimmedToken) {
+    throw new BitbucketProbeError(BITBUCKET_TOKEN_REQUIRED, 400);
+  }
+  return { email: trimmedEmail, token: trimmedToken };
+}
+
 function basicAuth(email: string, token: string): string {
   return `Basic ${Buffer.from(`${email}:${token}`, "utf8").toString("base64")}`;
 }
@@ -67,23 +94,26 @@ async function bitbucketStatus(path: string, email: string, token: string): Prom
 }
 
 function publicBitbucketStatusMessage(status: number): string {
-  if (status === 401) return "Bitbucket rejected the credentials.";
+  if (status === 401) return BITBUCKET_INVALID_CREDENTIALS;
   if (status === 403) return "Bitbucket denied access to that workspace.";
   if (status === 404) return "Bitbucket could not find that workspace or repository.";
   if (status >= 400 && status < 500) return "Bitbucket rejected the request.";
   return "Bitbucket is unavailable";
 }
 
+/**
+ * Confirm Bitbucket accepts this Atlassian email + API token. Uses GET /user.
+ * @throws BitbucketProbeError when the email is not an email, the token is blank, or Bitbucket rejects the pair.
+ */
 export async function assertBitbucketTokenReachable(email: string, token: string): Promise<void> {
-  const trimmedEmail = email.trim();
-  const trimmedToken = token.trim();
-  if (!trimmedEmail || !trimmedToken) {
-    throw new BitbucketProbeError("Bitbucket rejected the credentials.", 401);
-  }
+  const creds = assertBitbucketEmailAndToken(email, token);
   try {
-    const status = await bitbucketStatus("/user", trimmedEmail, trimmedToken);
+    const status = await bitbucketStatus("/user", creds.email, creds.token);
     if (status === 200) return;
-    throw new BitbucketProbeError(publicBitbucketStatusMessage(status === 404 ? 401 : status), status === 404 ? 401 : status);
+    throw new BitbucketProbeError(
+      publicBitbucketStatusMessage(status === 404 ? 401 : status),
+      status === 404 ? 401 : status
+    );
   } catch (err) {
     if (err instanceof BitbucketProbeError) throw err;
     logger.warn("bitbucket.token_probe_failed", { kind: err instanceof Error ? err.name : "unknown" });
@@ -99,11 +129,7 @@ export async function assertBitbucketTokenReachable(email: string, token: string
 export async function assertBitbucketConnectorReachable(input: BitbucketProbeInput): Promise<void> {
   const workspace = firstBitbucketSlug(input.workspace, "Workspace", true);
   const repo = firstBitbucketSlug(input.repositories, "Repository slugs", false);
-  const email = input.email.trim();
-  const token = input.token.trim();
-  if (!email || !token) {
-    throw new BitbucketProbeError("Bitbucket rejected the credentials.", 401);
-  }
+  const { email, token } = assertBitbucketEmailAndToken(input.email, input.token);
 
   try {
     const repoStatus = repo

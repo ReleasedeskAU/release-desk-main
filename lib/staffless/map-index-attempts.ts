@@ -3,6 +3,8 @@
  * Never forward stack traces or raw exception bodies.
  */
 
+import { slackDeadTokenSlug } from "@/lib/staffless/reconnect";
+
 export type StafflessIndexAttempt = {
   id: number;
   status: string | null;
@@ -63,9 +65,40 @@ export function plainIndexErrorMessage(raw: string | null | undefined): string |
     .replace(/Traceback \(most recent call last\):[\s\S]*/i, "")
     .replace(/(?:\n|^)\s*at\s+\S.+/g, "")
     .trim();
-  const line = (stripped || raw.trim()).split("\n")[0]?.trim() ?? "";
+  const blob = (stripped || raw.trim()).slice(0, 800);
+  const mapped = mapKnownVendorIndexError(blob);
+  if (mapped) return mapped.length > 300 ? `${mapped.slice(0, 297)}…` : mapped;
+  const line = blob.split("\n")[0]?.trim() ?? "";
   if (!line) return "Index run failed";
   return line.length > 300 ? `${line.slice(0, 297)}…` : line;
+}
+
+/**
+ * Replace vendor SDK strings (URLs, raw method names) with a named user message.
+ * Dead-token Slack slugs win over join/history/scope copy so reconnect can match.
+ * Does not guess which channel failed — that is not in the engine payload.
+ */
+export function mapKnownVendorIndexError(line: string): string | null {
+  const authSlug = slackDeadTokenSlug(line);
+  if (authSlug) return `Slack bot token was rejected (${authSlug}).`;
+  const lower = line.toLowerCase();
+  if (lower.includes("conversations.join") || /slack\.com\/api\/conversations\.join/i.test(line)) {
+    return "Slack could not join that channel. Invite the bot to private channels, or grant the bot the channels:join scope for public channels.";
+  }
+  if (
+    lower.includes("conversations.history") ||
+    lower.includes("conversations.replies") ||
+    /slack\.com\/api\/conversations\.(history|replies)/i.test(line)
+  ) {
+    return "This bot cannot read messages. Grant channels:history (and groups:history for private channels), reinstall the Slack app, and invite the bot to each channel you picked.";
+  }
+  if (lower.includes("users.info") || /slack\.com\/api\/users\.info/i.test(line)) {
+    return "This bot cannot read who posted. Add users:read under Bot Token Scopes (not User Token Scopes), reinstall the app, then paste the new bot token with Replace credentials.";
+  }
+  if (lower.includes("the request to the slack api failed")) {
+    return "Slack rejected a call while indexing this thread. Add users:read to Bot Token Scopes, reinstall, paste the new bot token (Replace credentials), invite the bot to the channel, then Re-index from beginning.";
+  }
+  return null;
 }
 
 /**

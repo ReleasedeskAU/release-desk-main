@@ -4,7 +4,11 @@
  * (acme in bitbucket.org/acme/app). Do not log the token or email.
  */
 
-import { BitbucketProbeError } from "@/lib/bitbucket/probe";
+import {
+  assertBitbucketEmailAndToken,
+  BITBUCKET_INVALID_CREDENTIALS,
+  BitbucketProbeError,
+} from "@/lib/bitbucket/probe";
 
 const PAGE_SIZE = 100;
 const MAX_REPO_PAGES = 2;
@@ -36,7 +40,7 @@ function mapRepo(raw: unknown): BitbucketRepoOption | null {
 }
 
 function throwListError(status: number): never {
-  if (status === 401) throw new BitbucketProbeError("Bitbucket rejected the credentials.", 401);
+  if (status === 401) throw new BitbucketProbeError(BITBUCKET_INVALID_CREDENTIALS, 401);
   if (status === 403) throw new BitbucketProbeError("Bitbucket denied access to that workspace.", 403);
   if (status === 404) {
     throw new BitbucketProbeError(
@@ -56,12 +60,8 @@ export async function fetchBitbucketRepos(
   token: string,
   workspace: string
 ): Promise<BitbucketRepoOption[]> {
-  const trimmedEmail = email.trim();
-  const trimmedToken = token.trim();
+  const { email: trimmedEmail, token: trimmedToken } = assertBitbucketEmailAndToken(email, token);
   const slug = workspace.trim();
-  if (!trimmedEmail || !trimmedToken) {
-    throw new BitbucketProbeError("Bitbucket rejected the credentials.", 401);
-  }
   if (!slug) {
     throw new BitbucketProbeError(
       "Enter the Bitbucket workspace slug from the repo URL (acme in bitbucket.org/acme/app).",

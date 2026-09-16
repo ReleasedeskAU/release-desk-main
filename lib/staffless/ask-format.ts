@@ -33,6 +33,8 @@ const FIELD_LABELS: Record<string, string> = {
   num_commits: "Commits",
   state: "State",
   merged: "Merged",
+  channel: "Channel",
+  author: "Author",
 };
 
 const FIELD_ORDER = Object.keys(FIELD_LABELS);

@@ -53,6 +53,15 @@ export const CONNECTOR_DATA_TYPES: Record<string, ConnectorDataTypeOption[]> = {
       default: true,
     },
   ],
+  slack: [
+    {
+      value: "threads",
+      label: "Channel threads (message text and replies)",
+      default: true,
+      fixed: true,
+    },
+    { value: "bot_messages", label: "Bot and webhook messages", default: false },
+  ],
 };
 
 export function defaultDataTypesForType(type: string): string[] {
@@ -78,6 +87,9 @@ export function dataTypesFromConfig(
       type,
       raw.filter((v): v is string => typeof v === "string")
     );
+  }
+  if (type === "slack" && config?.include_bot_messages === true) {
+    return ["threads", "bot_messages"];
   }
   return defaultDataTypesForType(type);
 }

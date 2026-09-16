@@ -7,7 +7,7 @@ import { planCatalogCreate, type CatalogCreateInput } from "@/lib/admin-connecto
 import { assertBitbucketConnectorReachable, assertBitbucketTokenReachable, BITBUCKET_ENGINE_STALE_CHECK, isStaleBitbucketEngineCheck } from "@/lib/bitbucket/probe";
 import { assertGithubTokenReachable } from "@/lib/github/probe";
 import { assertGitlabTokenReachable } from "@/lib/gitlab/probe";
-import { assertJiraTokenReachable } from "@/lib/jira/probe";
+import { assertSlackTokenReachable } from "@/lib/slack/probe";
 import {
   isStafflessConnectorType,
   planStafflessConnector,
@@ -142,6 +142,9 @@ async function assertVendorCredentialsReachable(
   }
   if (source === "bitbucket") {
     await assertBitbucketTokenReachable(credentials.email ?? "", credentials.token ?? "");
+  }
+  if (source === "slack") {
+    await assertSlackTokenReachable(credentials.token ?? "");
   }
 }
 

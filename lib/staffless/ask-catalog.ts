@@ -85,6 +85,8 @@ export type MatchingDocument = {
   key: string | null;
   title: string | null;
   link: string | null;
+  /** Connector source id (jira, slack, …). Null when the engine omitted it. */
+  source?: string | null;
   assignee?: string | null;
   status?: string | null;
   status_category?: string | null;
@@ -92,6 +94,7 @@ export type MatchingDocument = {
   updated?: string | null;
   duedate?: string | null;
   priority?: string | null;
+  author?: string | null;
 };
 
 export type DocumentListResult = {
@@ -264,8 +267,9 @@ export async function listDocumentsMatching(args: DocumentMatchArgs): Promise<Do
   if (args.sort_by) json.sort_by = args.sort_by;
   assignDateRangeFields(json, args);
   const result = await stafflessFetch<DocumentListResult>(STAFFLESS_DOCUMENT_LIST_PATH, { json });
+  const listSource = typeof result?.source === "string" ? result.source : args.source ?? "all";
   const documents = Array.isArray(result?.documents)
-    ? result.documents.slice(0, 50).map((row) => mapMatchingDocument(row))
+    ? result.documents.slice(0, 50).map((row) => mapMatchingDocument(row, listSource))
     : [];
   const filters = Array.isArray(result?.filters)
     ? result.filters.slice(0, 5).map((row) => ({
@@ -280,7 +284,7 @@ export async function listDocumentsMatching(args: DocumentMatchArgs): Promise<Do
     count,
     returned: finiteCount(result?.returned) || documents.length,
     cap: finiteCount(result?.cap) || 50,
-    source: typeof result?.source === "string" ? result.source : args.source ?? "all",
+    source: listSource,
     filters,
     filter_field: typeof result?.filter_field === "string" ? result.filter_field : args.filter_field ?? null,
     filter_value: typeof result?.filter_value === "string" ? result.filter_value : args.filter_value ?? null,
@@ -297,17 +301,30 @@ function optionalText(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
-function mapMatchingDocument(row: MatchingDocument | Record<string, unknown>): MatchingDocument {
+function catalogSource(value: unknown, listSource?: string): string | null {
+  const row = optionalText(value);
+  if (row) return row.toLowerCase();
+  const fromList = optionalText(listSource);
+  if (fromList && fromList !== "all") return fromList.toLowerCase();
+  return null;
+}
+
+function mapMatchingDocument(
+  row: MatchingDocument | Record<string, unknown>,
+  listSource?: string
+): MatchingDocument {
   return {
     key: typeof row?.key === "string" && row.key.trim() ? row.key : null,
     title: typeof row?.title === "string" ? row.title : null,
     link: typeof row?.link === "string" ? row.link : null,
+    source: catalogSource(row.source, listSource),
     assignee: optionalText(row.assignee),
     status: optionalText(row.status),
     created: optionalText(row.created),
     updated: optionalText(row.updated),
     duedate: optionalText(row.duedate),
     priority: optionalText(row.priority),
+    author: optionalText(row.author),
   };
 }
 

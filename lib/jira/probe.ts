@@ -3,8 +3,11 @@
  * Project list is not used: some sites return 200 for anonymous /project/search.
  */
 
+import { looksLikeAtlassianEmail } from "@/lib/connectors/atlassian-email";
 import { JiraProjectsFetchError } from "@/lib/jira/fetch-projects";
 import { JiraSiteError, parsePublicJiraOrigin } from "@/lib/jira/site";
+
+export { looksLikeAtlassianEmail };
 
 const TIMEOUT_MS = 15_000;
 export const JIRA_TOKEN_MAX_CHARS = 500;
@@ -20,12 +23,6 @@ export const JIRA_UNREACHABLE_URL =
 export const JIRA_SITE_NOT_FOUND =
   "That URL is not a Jira site, or the site was not found. Use https://your-org.atlassian.net with no extra path.";
 export const JIRA_SITE_FORBIDDEN = "This Jira token cannot access that site.";
-
-/** True for a non-empty email shape. Does not prove the Atlassian account exists. */
-export function looksLikeAtlassianEmail(email: string): boolean {
-  const trimmed = email.trim();
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
-}
 
 function mapJiraProbeFailure(err: unknown): never {
   if (err instanceof JiraProjectsFetchError) throw err;
