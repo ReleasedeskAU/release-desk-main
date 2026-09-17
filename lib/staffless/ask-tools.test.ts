@@ -321,6 +321,38 @@ describe("Ask date-range tools", () => {
     }
   });
 
+  it("sends source on list_queryable_fields so Slack can use the declared schema", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalPat = process.env.STAFFLESS_AI_PAT;
+    const originalUrl = process.env.STAFFLESS_AI_URL;
+    process.env.STAFFLESS_AI_PAT = "test-pat";
+    process.env.STAFFLESS_AI_URL = "http://staffless.test";
+    let sent: unknown;
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      sent = JSON.parse(String(init?.body ?? "{}"));
+      return new Response(
+        JSON.stringify({ fields: ["author", "channel"], cap: 50 }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }) as typeof fetch;
+    try {
+      const slack = await dispatchAskTool(ASK_TOOL_QUERYABLE_FIELDS, { source: "slack" });
+      assert.equal((sent as { source?: string }).source, "slack");
+      assert.deepEqual(JSON.parse(slack.result).fields, ["author", "channel"]);
+      const all = await dispatchAskTool(ASK_TOOL_QUERYABLE_FIELDS, {});
+      assert.equal((sent as { source?: string }).source, undefined);
+      assert.ok(ALLOWED_COUNT_FIELDS.includes("channel"));
+      assert.ok(ALLOWED_COUNT_FIELDS.includes("author"));
+      void all;
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;
+      else process.env.STAFFLESS_AI_PAT = originalPat;
+      if (originalUrl === undefined) delete process.env.STAFFLESS_AI_URL;
+      else process.env.STAFFLESS_AI_URL = originalUrl;
+    }
+  });
+
   it("allows list_documents_matching with only a named source and still rejects source=all", async () => {
     const originalFetch = globalThis.fetch;
     const originalPat = process.env.STAFFLESS_AI_PAT;

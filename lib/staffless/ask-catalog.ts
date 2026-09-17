@@ -3,6 +3,7 @@
  */
 
 import { stafflessFetch } from "@/lib/staffless/client";
+import { ASK_SOURCE_ALL } from "@/lib/staffless/ask-source";
 import {
   ALLOWED_COUNT_FIELDS,
   PII_TAG_FIELDS,
@@ -125,9 +126,9 @@ export type QueryableFieldsResult = {
   note: string;
 };
 
-export async function listQueryableFields(): Promise<QueryableFieldsResult> {
+export async function listQueryableFields(source?: string): Promise<QueryableFieldsResult> {
   const result = await stafflessFetch<QueryableFieldsResult>(STAFFLESS_DOCUMENT_FIELDS_PATH, {
-    json: {},
+    json: source && source !== ASK_SOURCE_ALL ? { source } : {},
   });
   const fields = stringList(result?.fields, 40).filter(
     (field) => !PII_TAG_FIELDS.includes(field as (typeof PII_TAG_FIELDS)[number])

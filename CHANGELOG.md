@@ -8,6 +8,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Ask Slack field schema:** `list_queryable_fields` sends `source` to StaffLess `document-fields` so Slack can publish its declared tags. Count/distinct still validate against `ALLOWED_COUNT_FIELDS` in Ask; Slack deselection is enforced on the engine. No prompt change. Auth unchanged.
+
 - **Ask OpenAI retries:** the Ask OpenAI client uses `maxRetries: 3` (SDK default was 2). Transient 429/5xx/timeouts still retry inside the SDK; 4xx still fail fast. No second retry loop. Auth unchanged.
 
 - **Ask unused-field search:** When distinct/breakdown show a field unused on that source (`untagged_count === total_indexed`), the tool result also includes a ranked `search_fallback` of the **user question** (not a hardcoded name). Real 0s and document-by-key misses are unchanged. Auth unchanged.

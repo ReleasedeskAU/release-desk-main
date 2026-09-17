@@ -444,7 +444,7 @@ async function runAllowlistedTool(
     if (!parsed.success) return invalidArgs(name);
     const blocked = rejectUnknownSource(name, parsed.data.source, context);
     if (blocked) return blocked;
-    return { name, result: JSON.stringify(await listQueryableFields()) };
+    return { name, result: JSON.stringify(await listQueryableFields(parsed.data.source)) };
   }
   if (name === ASK_TOOL_BREAKDOWN) {
     const parsed = fieldArgsSchema.safeParse(rawArgs);
