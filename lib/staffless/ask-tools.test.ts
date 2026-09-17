@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { ALLOWED_COUNT_FIELDS, PII_TAG_FIELDS } from "./ask-count";
 import { ASK_NO_TOOL_HINT, ASK_PUBLIC_UNAVAILABLE, ASK_TOOL_FAILURE_HINT, ASK_INVALID_ARGS_HINT } from "./ask-errors";
 import { ASK_AGENT_SYSTEM } from "./ask-copy";
-import { ASK_MAX_TOOL_ROUNDS } from "./ask-agent";
+import { ASK_MAX_TOOL_ROUNDS, ASK_OPENAI_MAX_RETRIES } from "./ask-agent";
 import {
   ASK_TOOL_BREAKDOWN,
   ASK_TOOL_DISTINCT,
@@ -119,6 +119,7 @@ describe("Ask catalog tools", () => {
       );
     }
     assert.equal(ASK_MAX_TOOL_ROUNDS >= 4, true);
+    assert.equal(ASK_OPENAI_MAX_RETRIES, 3);
     assert.match(ASK_AGENT_SYSTEM, /choose by what the question needs/i);
     assert.match(ASK_AGENT_SYSTEM, /list_queryable_fields/);
     assert.match(ASK_AGENT_SYSTEM, /get_breakdown_by_field/);

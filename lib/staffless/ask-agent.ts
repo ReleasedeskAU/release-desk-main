@@ -21,6 +21,7 @@ import { sourcesFromAskToolResult, type AskEvent, type AskSource } from "@/lib/s
 import { logger } from "@/lib/logger";
 
 export const ASK_MAX_TOOL_ROUNDS = 8;
+export const ASK_OPENAI_MAX_RETRIES = 3;
 
 export type AskHistoryTurn = { role: "user" | "assistant"; content: string };
 
@@ -47,7 +48,7 @@ export async function* runAskAgent(opts: {
     return;
   }
 
-  const openai = new OpenAI({ apiKey });
+  const openai = new OpenAI({ apiKey, maxRetries: ASK_OPENAI_MAX_RETRIES });
   const indexedSources = await loadAskIndexedSources();
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: `${ASK_AGENT_SYSTEM}\n\n${formatAskSourceInventory(indexedSources)}` },

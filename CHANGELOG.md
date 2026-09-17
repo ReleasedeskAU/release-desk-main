@@ -8,6 +8,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Ask OpenAI retries:** the Ask OpenAI client uses `maxRetries: 3` (SDK default was 2). Transient 429/5xx/timeouts still retry inside the SDK; 4xx still fail fast. No second retry loop. Auth unchanged.
+
 - **Ask unused-field search:** When distinct/breakdown show a field unused on that source (`untagged_count === total_indexed`), the tool result also includes a ranked `search_fallback` of the **user question** (not a hardcoded name). Real 0s and document-by-key misses are unchanged. Auth unchanged.
 
 - **Ask list by source:** `list_documents_matching` accepts `source=<connector>` with no extra filter (still capped at 50). `source=all` with no filter is still rejected. Prompt unchanged. Engine `document-list` must be deployed with this. Auth unchanged.
@@ -15,6 +17,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Ask hybrid search:** `search_indexed_documents` sends `retrieval=hybrid` to StaffLess admin search so paraphrased questions can use indexed vectors. Connectors work-items stay keyword (default). Engine must be deployed with the matching admin-search change. Auth unchanged.
 
 ### Security
+
+- **Ask rate limit:** `POST /api/ask` is limited to 10 requests per minute per Clerk user and 60 per minute per Clerk org (when present), via Upstash Redis sliding window. Over limit returns 429 with the existing public unavailable copy and Retry-After. Redis errors fail closed. No limit when Redis env is unset (local). Auth still `readonly`. No user ids in error JSON.
 
 - **GitLab / Bitbucket Check fields:** Add Connector now asks GitLab (`GET /api/v4/user`) and Bitbucket (`GET /2.0/user`) whether the token is accepted before Next. Invalid or revoked tokens cannot continue. Tokens and emails are not logged. Auth unchanged (editor).
 
