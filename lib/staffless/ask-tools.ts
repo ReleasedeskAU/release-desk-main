@@ -134,7 +134,8 @@ const matchArgsSchema = z
     if ((value.filter_field === undefined) !== (value.filter_value === undefined)) {
       ctx.addIssue({ code: "custom", message: "filter_field and filter_value must be sent together" });
     }
-    if (!hasPair && !hasList && !hasDate) {
+    const namedSource = typeof value.source === "string" && value.source !== ASK_SOURCE_ALL;
+    if (!hasPair && !hasList && !hasDate && !namedSource) {
       ctx.addIssue({ code: "custom", message: "At least one filter or date range is required" });
     }
   });

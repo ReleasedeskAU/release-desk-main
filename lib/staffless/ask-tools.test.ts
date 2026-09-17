@@ -320,6 +320,54 @@ describe("Ask date-range tools", () => {
     }
   });
 
+  it("allows list_documents_matching with only a named source and still rejects source=all", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalPat = process.env.STAFFLESS_AI_PAT;
+    const originalUrl = process.env.STAFFLESS_AI_URL;
+    process.env.STAFFLESS_AI_PAT = "test-pat";
+    process.env.STAFFLESS_AI_URL = "http://staffless.test";
+    let sent: unknown;
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      sent = JSON.parse(String(init?.body ?? "{}"));
+      return new Response(
+        JSON.stringify({
+          count: 51,
+          returned: 50,
+          cap: 50,
+          source: "teams",
+          truncated: true,
+          documents: Array.from({ length: 50 }, (_, i) => ({
+            key: `T-${i + 1}`,
+            title: `Thread ${i + 1}`,
+            source: "teams",
+          })),
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }) as typeof fetch;
+    try {
+      const allOnly = await dispatchAskTool(ASK_TOOL_LIST_MATCHING, { source: "all" });
+      assert.match(allOnly.result, /invalid_args/);
+      const result = await dispatchAskTool(ASK_TOOL_LIST_MATCHING, { source: "teams" });
+      const payload = JSON.parse(result.result) as {
+        count: number;
+        truncated: boolean;
+        documents: Array<{ key: string }>;
+      };
+      assert.equal((sent as { source?: string; filters?: unknown }).source, "teams");
+      assert.equal((sent as { filters?: unknown }).filters, undefined);
+      assert.equal(payload.count, 51);
+      assert.equal(payload.truncated, true);
+      assert.equal(payload.documents.length, 50);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;
+      else process.env.STAFFLESS_AI_PAT = originalPat;
+      if (originalUrl === undefined) delete process.env.STAFFLESS_AI_URL;
+      else process.env.STAFFLESS_AI_URL = originalUrl;
+    }
+  });
+
   it("allows list_documents_matching with only a date range", async () => {
     const originalFetch = globalThis.fetch;
     const originalPat = process.env.STAFFLESS_AI_PAT;
