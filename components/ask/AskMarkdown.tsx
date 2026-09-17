@@ -46,7 +46,19 @@ function AskMdBlockView({ block }: { block: AskMdBlock }) {
               {block.ordered ? i + 1 : "•"}
             </span>
             <span className="min-w-0">
-              <AskInline text={item} />
+              <AskInline text={item.text} />
+              {item.nested.length > 0 ? (
+                <ul className="mt-1.5 list-none space-y-1">
+                  {item.nested.map((nested, ni) => (
+                    <li key={ni} className="flex gap-2">
+                      <span className="shrink-0 text-gray-400 dark:text-white/40">•</span>
+                      <span className="min-w-0">
+                        <AskInline text={nested} />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </span>
           </li>
         ))}

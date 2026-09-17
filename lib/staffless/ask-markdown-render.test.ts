@@ -57,4 +57,16 @@ describe("AskMarkdown rendering", () => {
     assert.match(html, />2</);
     assert.match(html, /tabular-nums/);
   });
+
+  it("numbers split 1. records 1 2 3 instead of repeating 1", () => {
+    const html = renderAsk(
+      "1. **BN-14: Today's work**\n- Assignee: Kiran\n\n1. **BN-19: Shared connector**\n- Assignee: Kabir\n\n1. **BN-20: Testing**\n- Priority: High"
+    );
+    assert.equal((html.match(/<ol/g) ?? []).length, 1);
+    assert.match(html, />1</);
+    assert.match(html, />2</);
+    assert.match(html, />3</);
+    assert.match(html, /BN-14/);
+    assert.match(html, /Assignee: Kiran/);
+  });
 });

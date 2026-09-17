@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Ask hybrid search:** `search_indexed_documents` sends `retrieval=hybrid` to StaffLess admin search so paraphrased questions can use indexed vectors. Connectors work-items stay keyword (default). Engine must be deployed with the matching admin-search change. Auth unchanged.
+
 ### Security
 
 - **GitLab / Bitbucket Check fields:** Add Connector now asks GitLab (`GET /api/v4/user`) and Bitbucket (`GET /2.0/user`) whether the token is accepted before Next. Invalid or revoked tokens cannot continue. Tokens and emails are not logged. Auth unchanged (editor).
@@ -22,7 +26,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Native Scope tenant + download hardening:** Attachment GET responses send `X-Content-Type-Options: nosniff`. Scope pickers, grants, downloads, and release **list + detail** use the same session tenant (directory `User.organizationId`, else Clerk org). Detail still requires an exact `organizationId` match (null/other-org → 404). Assignment pickers are that same org only — not NULL-org users and not unscoped `/api/users`. Change-request approve `updateMany` requires both `requestId` and `scopeId`. Create/Edit Release Manager and Owner pickers use session-tenant `assignmentOptions` (release GET, or `GET /api/release-assignment-options` on create). The form maps those options through a client-safe helper so the preview build does not pull Prisma/Clerk server code into the browser bundle.
 
-### Fixed
+- **Ask child tickets:** `list_documents_matching` accepts a published field sent as its own argument (`parent=BN-15`) and maps it to `filter_field=parent`. Invalid args tell the model to retry instead of saying the lookup failed. Auth unchanged.
+
+- **Ask list numbering:** Numbered answers with a field bullet list under each record now count 1, 2, 3. The model often writes `1.` on every record; nested bullets no longer restart the count. Auth unchanged.
 
 - **Ask Slack channel vs keyword:** Ask tools now treat an empty search sample as a miss, not “no indexed documents.” Channel posts are listed with `list_documents_matching` (`source=slack`, `channel` without #). Search rows include the stored permalink. Auth unchanged.
 

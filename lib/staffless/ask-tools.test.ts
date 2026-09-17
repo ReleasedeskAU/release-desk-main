@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { ALLOWED_COUNT_FIELDS, PII_TAG_FIELDS } from "./ask-count";
+import { ASK_NO_TOOL_HINT, ASK_PUBLIC_UNAVAILABLE, ASK_TOOL_FAILURE_HINT, ASK_INVALID_ARGS_HINT } from "./ask-errors";
+import { ASK_AGENT_SYSTEM } from "./ask-copy";
+import { ASK_MAX_TOOL_ROUNDS } from "./ask-agent";
 import {
   ASK_TOOL_BREAKDOWN,
   ASK_TOOL_DISTINCT,
@@ -13,10 +16,8 @@ import {
   ASK_TOOLS,
   buildAskTools,
   dispatchAskTool,
+  liftPublishedFieldArgs,
 } from "./ask-tools";
-import { ASK_AGENT_SYSTEM } from "./ask-copy";
-import { ASK_MAX_TOOL_ROUNDS } from "./ask-agent";
-import { ASK_NO_TOOL_HINT, ASK_PUBLIC_UNAVAILABLE, ASK_TOOL_FAILURE_HINT } from "./ask-errors";
 
 const CATALOG_TOOLS = [
   ASK_TOOL_INDEXED_SOURCES,
@@ -43,13 +44,12 @@ describe("Ask catalog tools", () => {
     assert.match(byName[ASK_TOOL_BREAKDOWN] ?? "", /grouped by one field/);
     assert.match(byName[ASK_TOOL_DISTINCT] ?? "", /stored values/);
     assert.match(byName[ASK_TOOL_DOCUMENT_BY_KEY] ?? "", /exact lookup/i);
-    assert.match(byName[ASK_TOOL_LIST_MATCHING] ?? "", /AND filters/);
+    assert.match(byName[ASK_TOOL_LIST_MATCHING] ?? "", /omit extra filters/);
     assert.match(byName[ASK_TOOL_QUERYABLE_FIELDS] ?? "", /Published fields/);
     assert.match(byName[ASK_TOOL_SEARCH_INDEX] ?? "", /Ranked sample/);
     assert.match(byName[ASK_TOOL_SEARCH_INDEX] ?? "", /Never use for how-many/);
     assert.match(byName[ASK_TOOL_SEARCH_INDEX] ?? "", /empty:true/);
-    assert.match(byName[ASK_TOOL_LIST_MATCHING] ?? "", /channel=<stored name without #>/);
-    assert.match(byName[ASK_TOOL_LIST_MATCHING] ?? "", /author, not assignee/);
+    assert.match(byName[ASK_TOOL_LIST_MATCHING] ?? "", /one connector/);
     assert.match(byName[ASK_TOOL_INDEXED_SOURCES] ?? "", /Created connector sources/);
     const live = buildAskTools(["bitbucket", "jira"]);
     const count = live.find((t) => t.type === "function" && t.function.name === ASK_TOOL_GET_VERIFIED_COUNT);
@@ -124,6 +124,7 @@ describe("Ask catalog tools", () => {
     assert.match(ASK_AGENT_SYSTEM, /get_breakdown_by_field/);
     assert.match(ASK_AGENT_SYSTEM, /list_distinct_values/);
     assert.match(ASK_AGENT_SYSTEM, /list_documents_matching/);
+    assert.match(ASK_AGENT_SYSTEM, /Never use search to list a source/);
     assert.match(ASK_AGENT_SYSTEM, /Date ranges/);
     assert.match(ASK_AGENT_SYSTEM, /due_before/);
     assert.match(ASK_AGENT_SYSTEM, /RD-9 is not RD-90/);
@@ -135,6 +136,10 @@ describe("Ask catalog tools", () => {
     assert.match(ASK_AGENT_SYSTEM, /candidates, not confirmed duplicates/);
     assert.match(ASK_AGENT_SYSTEM, /title\/summary match/);
     assert.equal(/Q26|Q24|Q33/i.test(ASK_AGENT_SYSTEM), false);
+    assert.match(ASK_AGENT_SYSTEM, /filter_field=parent/);
+    assert.match(ASK_AGENT_SYSTEM, /never a parent= argument/);
+    assert.match(ASK_AGENT_SYSTEM, /does not return children/);
+    assert.match(ASK_AGENT_SYSTEM, /invalid_args/);
     assert.match(ASK_AGENT_SYSTEM, /Never call that number "repos"/);
     assert.match(ASK_AGENT_SYSTEM, /object_type=Commit/);
     assert.match(ASK_AGENT_SYSTEM, /num_files_changed/);
@@ -153,11 +158,15 @@ describe("Ask catalog tools", () => {
     assert.match(searchTool && searchTool.type === "function" ? searchTool.function.description ?? "" : "", /empty:true/);
     assert.match(
       listTool && listTool.type === "function" ? listTool.function.description ?? "" : "",
-      /channel=<stored name without #>/
+      /omit extra filters/
     );
     assert.match(
       listTool && listTool.type === "function" ? listTool.function.description ?? "" : "",
       /Rows include source/
+    );
+    assert.match(
+      listTool && listTool.type === "function" ? listTool.function.description ?? "" : "",
+      /filter_field=parent/
     );
     assert.match(searchTool && searchTool.type === "function" ? searchTool.function.description ?? "" : "", /untrusted/);
     assert.equal(/GitLab issues are not Jira keys/.test(ASK_AGENT_SYSTEM), false);
@@ -210,6 +219,59 @@ describe("Ask catalog tools", () => {
       assert.deepEqual(
         payload.documents.map((row) => row.source),
         ["jira", "jira"]
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;
+      else process.env.STAFFLESS_AI_PAT = originalPat;
+      if (originalUrl === undefined) delete process.env.STAFFLESS_AI_URL;
+      else process.env.STAFFLESS_AI_URL = originalUrl;
+    }
+  });
+
+  it("lists child tickets when parent is sent as its own argument", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalPat = process.env.STAFFLESS_AI_PAT;
+    const originalUrl = process.env.STAFFLESS_AI_URL;
+    process.env.STAFFLESS_AI_PAT = "test-pat";
+    process.env.STAFFLESS_AI_URL = "http://staffless.test";
+    let sent: unknown;
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      sent = JSON.parse(String(init?.body ?? "{}"));
+      return new Response(
+        JSON.stringify({
+          count: 2,
+          source: "jira",
+          documents: [
+            { key: "BN-16", title: "Child A", link: "https://example.test/BN-16", source: "jira" },
+            { key: "BN-17", title: "Child B", link: "https://example.test/BN-17", source: "jira" },
+          ],
+          truncated: false,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }) as typeof fetch;
+    try {
+      const lifted = liftPublishedFieldArgs({ parent: "BN-15" }) as {
+        filter_field?: string;
+        filter_value?: string;
+      };
+      assert.equal(lifted.filter_field, "parent");
+      assert.equal(lifted.filter_value, "BN-15");
+      const result = await dispatchAskTool(ASK_TOOL_LIST_MATCHING, { parent: "BN-15" });
+      const payload = JSON.parse(result.result) as { documents: Array<{ key: string }> };
+      assert.deepEqual(
+        payload.documents.map((row) => row.key),
+        ["BN-16", "BN-17"]
+      );
+      assert.equal((sent as { filter_field?: string }).filter_field, "parent");
+      assert.equal((sent as { filter_value?: string }).filter_value, "BN-15");
+      const subtasks = liftPublishedFieldArgs({ parent: "BN-15", issuetype: "Subtask" }) as {
+        filters?: Array<{ filter_field: string; filter_value: string }>;
+      };
+      assert.deepEqual(
+        (subtasks.filters ?? []).map((row) => `${row.filter_field}=${row.filter_value}`).sort(),
+        ["issuetype=Subtask", "parent=BN-15"]
       );
     } finally {
       globalThis.fetch = originalFetch;
@@ -302,8 +364,10 @@ describe("Ask date-range tools", () => {
     const originalUrl = process.env.STAFFLESS_AI_URL;
     process.env.STAFFLESS_AI_PAT = "test-pat";
     process.env.STAFFLESS_AI_URL = "http://staffless.test";
-    globalThis.fetch = (async () =>
-      new Response(
+    let sent: unknown;
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      sent = JSON.parse(String(init?.body ?? "{}"));
+      return new Response(
         JSON.stringify({
           documents: [
             {
@@ -317,7 +381,8 @@ describe("Ask date-range tools", () => {
           ],
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
-      )) as typeof fetch;
+      );
+    }) as typeof fetch;
     try {
       const result = await dispatchAskTool(ASK_TOOL_SEARCH_INDEX, { query: "hello", source: "slack" });
       const payload = JSON.parse(result.result) as {
@@ -334,6 +399,7 @@ describe("Ask date-range tools", () => {
       assert.equal(payload.documents[0]?.blurb, "matched reply text");
       assert.match(payload.hint ?? "", /neighbors/);
       assert.equal(payload.content_trust, "untrusted");
+      assert.equal((sent as { retrieval?: string }).retrieval, "hybrid");
     } finally {
       globalThis.fetch = originalFetch;
       if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;
@@ -382,8 +448,11 @@ describe("Ask date-range tools", () => {
 
 describe("Ask graceful failures", () => {
   it("keeps user-facing failures plain and free of internals", () => {
-    const blob = `${ASK_PUBLIC_UNAVAILABLE}\n${ASK_TOOL_FAILURE_HINT}\n${ASK_NO_TOOL_HINT}`;
+    const blob = `${ASK_PUBLIC_UNAVAILABLE}\n${ASK_TOOL_FAILURE_HINT}\n${ASK_NO_TOOL_HINT}\n${ASK_INVALID_ARGS_HINT}`;
+    assert.match(ASK_INVALID_ARGS_HINT, /Retry with published arguments/);
+    assert.match(ASK_INVALID_ARGS_HINT, /filter_field=parent/);
     assert.match(ASK_PUBLIC_UNAVAILABLE, /exact counts and breakdowns/i);
+    assert.match(ASK_TOOL_FAILURE_HINT, /listing matching documents/);
     assert.match(ASK_NO_TOOL_HINT, /say clearly what they asked for/i);
     for (const banned of ["traceback", "exception", "stack", "openai", "onyx", "postgres", "ECONNREFUSED"]) {
       assert.equal(new RegExp(banned, "i").test(blob), false, banned);

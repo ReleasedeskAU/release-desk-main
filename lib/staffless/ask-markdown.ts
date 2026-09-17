@@ -14,10 +14,16 @@ export type AskMdInline =
   | { type: "code"; text: string }
   | { type: "link"; text: string; href: string };
 
+/** One list row. Nested bullets stay under this row so numbering can continue. */
+export type AskMdListItem = {
+  text: string;
+  nested: string[];
+};
+
 export type AskMdBlock =
   | { type: "heading"; level: 2 | 3; text: string }
   | { type: "paragraph"; text: string }
-  | { type: "list"; ordered: boolean; items: string[] }
+  | { type: "list"; ordered: boolean; items: AskMdListItem[] }
   | { type: "table"; headers: string[]; rows: string[][] }
   | { type: "code"; text: string };
 
@@ -124,25 +130,88 @@ function readHeading(line: string): AskMdBlock | null {
   return { type: "heading", level: m[1].length === 2 ? 2 : 3, text: m[2].trim() };
 }
 
+const NUMBERED_ITEM = /^\s*\d+\.\s+(.+)$/;
+const BULLET_ITEM = /^\s*[-*•]\s+(.+)$/;
+
+function numberedText(line: string): string | null {
+  const match = line.match(NUMBERED_ITEM);
+  return match ? (match[1] ?? "") : null;
+}
+
+function bulletText(line: string): string | null {
+  const match = line.match(BULLET_ITEM);
+  return match ? (match[1] ?? "") : null;
+}
+
+function nextNonEmptyLine(lines: string[], from: number): string {
+  let i = from;
+  while (i < lines.length && !(lines[i] ?? "").trim()) i += 1;
+  return lines[i] ?? "";
+}
+
 function readList(
   lines: string[],
   start: number
 ): { block: AskMdBlock; next: number } | null {
   const first = lines[start] ?? "";
-  const bullet = first.match(/^\s*[-*•]\s+(.+)$/);
-  const numbered = first.match(/^\s*\d+\.\s+(.+)$/);
-  if (!bullet && !numbered) return null;
-  const ordered = Boolean(numbered);
-  const items: string[] = [];
+  if (numberedText(first) != null) return readOrderedList(lines, start);
+  if (bulletText(first) != null) return readBulletList(lines, start);
+  return null;
+}
+
+/**
+ * Consecutive bullets only. Blank lines end the list (same as before).
+ */
+function readBulletList(
+  lines: string[],
+  start: number
+): { block: AskMdBlock; next: number } {
+  const items: AskMdListItem[] = [];
+  let i = start;
+  while (i < lines.length) {
+    const text = bulletText(lines[i] ?? "");
+    if (text == null) break;
+    items.push({ text, nested: [] });
+    i += 1;
+  }
+  return { block: { type: "list", ordered: false, items }, next: i };
+}
+
+/**
+ * Numbered rows stay one list even when the model writes `1.` each time
+ * and puts field bullets (or blank lines) between records.
+ */
+function readOrderedList(
+  lines: string[],
+  start: number
+): { block: AskMdBlock; next: number } {
+  const items: AskMdListItem[] = [];
   let i = start;
   while (i < lines.length) {
     const line = lines[i] ?? "";
-    const item = ordered ? line.match(/^\s*\d+\.\s+(.+)$/) : line.match(/^\s*[-*•]\s+(.+)$/);
-    if (!item) break;
-    items.push(item[1] ?? "");
-    i += 1;
+    if (!line.trim()) {
+      const peek = nextNonEmptyLine(lines, i + 1);
+      if (numberedText(peek) != null || (items.length > 0 && bulletText(peek) != null)) {
+        i += 1;
+        continue;
+      }
+      break;
+    }
+    const numbered = numberedText(line);
+    if (numbered != null) {
+      items.push({ text: numbered, nested: [] });
+      i += 1;
+      continue;
+    }
+    const bullet = bulletText(line);
+    if (bullet != null && items.length > 0) {
+      items[items.length - 1]?.nested.push(bullet);
+      i += 1;
+      continue;
+    }
+    break;
   }
-  return { block: { type: "list", ordered, items }, next: i };
+  return { block: { type: "list", ordered: true, items }, next: i };
 }
 
 function readParagraph(

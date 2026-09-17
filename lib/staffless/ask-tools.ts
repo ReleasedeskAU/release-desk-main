@@ -12,9 +12,10 @@ import {
   listDistinctValues,
   listDocumentsMatching,
   listQueryableFields,
+  type CountFilterField,
 } from "@/lib/staffless/ask-catalog";
 import { ASK_SEARCH_EMPTY_HINT, ASK_SEARCH_NEIGHBOR_HINT, ASK_UNTRUSTED_INDEX_NOTE } from "@/lib/staffless/ask-copy";
-import { ASK_TOOL_FAILURE_HINT } from "@/lib/staffless/ask-errors";
+import { ASK_INVALID_ARGS_HINT, ASK_TOOL_FAILURE_HINT } from "@/lib/staffless/ask-errors";
 import {
   ASK_SOURCE_ALL,
   askSourceSlug,
@@ -223,6 +224,75 @@ function hasDateRange(value: {
   );
 }
 
+const CATALOG_FILTER_RESERVED = new Set([
+  "source",
+  "filter_field",
+  "filter_value",
+  "filters",
+  "sort_by",
+  "created_from",
+  "created_to",
+  "resolved_from",
+  "resolved_to",
+  "updated_from",
+  "updated_to",
+  "due_from",
+  "due_to",
+  "due_before",
+]);
+const PUBLISHED_FILTER_FIELDS = new Set<string>(ALLOWED_COUNT_FIELDS);
+
+/**
+ * Turn published field names sent as their own keys into filter_field/filters.
+ * The model often sends parent=BN-15; `key` is not lifted (that is get_document_by_key).
+ */
+export function liftPublishedFieldArgs(raw: unknown): unknown {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const obj: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
+  const lifted: Array<{ filter_field: CountFilterField; filter_value: string }> = [];
+  for (const [name, value] of Object.entries(obj)) {
+    if (CATALOG_FILTER_RESERVED.has(name) || name === "key") continue;
+    if (!PUBLISHED_FILTER_FIELDS.has(name) || typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (!trimmed || trimmed.length > 80) continue;
+    lifted.push({ filter_field: name as CountFilterField, filter_value: trimmed });
+    delete obj[name];
+  }
+  if (lifted.length === 0) return obj;
+  return mergeLiftedFilters(obj, lifted);
+}
+
+function mergeLiftedFilters(
+  obj: Record<string, unknown>,
+  lifted: Array<{ filter_field: CountFilterField; filter_value: string }>
+): Record<string, unknown> {
+  const fromList = Array.isArray(obj.filters)
+    ? obj.filters.flatMap((row) => {
+        if (!row || typeof row !== "object" || Array.isArray(row)) return [];
+        const field = (row as { filter_field?: unknown }).filter_field;
+        const value = (row as { filter_value?: unknown }).filter_value;
+        if (typeof field !== "string" || typeof value !== "string") return [];
+        return [{ filter_field: field, filter_value: value }];
+      })
+    : [];
+  const hasPair = typeof obj.filter_field === "string" && typeof obj.filter_value === "string";
+  const combined = [
+    ...(hasPair ? [{ filter_field: String(obj.filter_field), filter_value: String(obj.filter_value) }] : []),
+    ...fromList,
+    ...lifted,
+  ];
+  delete obj.filter_field;
+  delete obj.filter_value;
+  if (combined.length === 1) {
+    obj.filter_field = combined[0].filter_field;
+    obj.filter_value = combined[0].filter_value;
+    delete obj.filters;
+    return obj;
+  }
+  obj.filters = combined;
+  return obj;
+}
+
 /**
  * OpenAI function tools for Ask. Source enum is this turn's created connectors plus all.
  */
@@ -270,7 +340,7 @@ export function buildAskTools(sourceIds: string[] = []): ChatCompletionTool[] {
     ),
     fnTool(
       ASK_TOOL_LIST_MATCHING,
-      "Exact list of indexed documents matching AND filters and/or date ranges. Rows include source, key, title, link, assignee, author, status, status_category, created, updated, duedate, priority. Slack channel posts use source=slack and channel=<stored name without #>. Slack who-posted is author, not assignee. sort_by: key_asc, created_asc, created_desc, updated_asc, updated_desc. Children of an epic: parent=<epic key>. Subtasks: parent=<ticket> AND issuetype=Subtask. If truncated, say showing first cap of count. Never invent IDs or URLs. When sources disagree, attribute each claim to the row source.",
+      "Exact list of indexed documents. Pass source to restrict to one connector; omit extra filters to list every document on that source (or all). Optional AND filters and date ranges use published fields. Rows include source, key, title, link, assignee, author, status, status_category, created, updated, duedate, priority. sort_by: key_asc, created_asc, created_desc, updated_asc, updated_desc. Child tickets: filter_field=parent, filter_value=<parent key> — never a parent= argument. Subtasks: that plus filters issuetype=Subtask. If truncated, say showing first cap of count. Never invent IDs or URLs. When sources disagree, attribute each claim to the row source.",
       {
         source: sourceProp,
         filter_field: fieldProp,
@@ -297,8 +367,8 @@ export const ASK_TOOLS: ChatCompletionTool[] = buildAskTools([]);
 
 export type AskToolDispatch = { name: string; result: string };
 
-function invalidArgs(name: string): AskToolDispatch {
-  return { name, result: JSON.stringify({ error: "invalid_args", hint: ASK_TOOL_FAILURE_HINT }) };
+function invalidArgs(name: string, hint: string = ASK_TOOL_FAILURE_HINT): AskToolDispatch {
+  return { name, result: JSON.stringify({ error: "invalid_args", hint }) };
 }
 
 function unknownSource(name: string): AskToolDispatch {
@@ -359,8 +429,8 @@ async function runAllowlistedTool(
     };
   }
   if (name === ASK_TOOL_GET_VERIFIED_COUNT) {
-    const parsed = countArgsSchema.safeParse(rawArgs);
-    if (!parsed.success) return invalidArgs(name);
+    const parsed = countArgsSchema.safeParse(liftPublishedFieldArgs(rawArgs));
+    if (!parsed.success) return invalidArgs(name, ASK_INVALID_ARGS_HINT);
     const blocked = rejectUnknownSource(name, parsed.data.source, context);
     if (blocked) return blocked;
     return { name, result: JSON.stringify(await getVerifiedCount(parsed.data)) };
@@ -394,8 +464,8 @@ async function runAllowlistedTool(
     return { name, result: JSON.stringify(await getDocumentByKey(parsed.data)) };
   }
   if (name === ASK_TOOL_LIST_MATCHING) {
-    const parsed = matchArgsSchema.safeParse(rawArgs);
-    if (!parsed.success) return invalidArgs(name);
+    const parsed = matchArgsSchema.safeParse(liftPublishedFieldArgs(rawArgs));
+    if (!parsed.success) return invalidArgs(name, ASK_INVALID_ARGS_HINT);
     const blocked = rejectUnknownSource(name, parsed.data.source, context);
     if (blocked) return blocked;
     return { name, result: JSON.stringify(await listDocumentsMatching(parsed.data)) };
@@ -452,7 +522,7 @@ async function searchIndexedSample(
   const filters: Record<string, unknown> = {};
   if (source && source !== "all") filters.source_type = [source];
   const body = await stafflessFetch<{ documents?: StafflessSearchDoc[] }>("/api/admin/search", {
-    json: { query, filters },
+    json: { query, filters, retrieval: "hybrid" },
   });
   const raw = body?.documents ?? [];
   const blurbs = new Map<string, string>();
