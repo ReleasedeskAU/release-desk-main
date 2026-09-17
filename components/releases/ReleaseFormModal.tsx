@@ -1429,7 +1429,7 @@ export function ReleaseFormModal({
               <RequiredMark />
             </label>
             <p className="mt-0.5 text-[11px] text-gray-400">
-              The field-lock matrix also lists this as Affected Systems (no separate column).
+              Pick the applications this release affects. Choose a department first.
             </p>
             <div className="mt-1">
               <SearchableMultiSelect

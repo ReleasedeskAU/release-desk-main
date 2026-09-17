@@ -94,7 +94,6 @@ describe("field-lock write-path inventory (source wiring)", () => {
     assert.match(src, /fieldLocked\("deploymentWindow"\)/);
     assert.match(src, /fieldLocked\("dressRehearsal"\)/);
     assert.match(src, /Duration \(Days\)/);
-    assert.match(src, /Affected Systems/);
     assert.match(src, /\/api\/release-field-lock-config/);
   });
 
