@@ -398,14 +398,16 @@ function rejectUnknownSource(
  * @param name - Tool name from the model.
  * @param rawArgs - JSON object the model supplied.
  * @param context - This turn's created connector sources (optional in unit tests).
+ * @param userQuestion - Current user turn; used only when a catalog field is unused on the source.
  */
 export async function dispatchAskTool(
   name: string,
   rawArgs: unknown,
-  context?: AskSourceContext
+  context?: AskSourceContext,
+  userQuestion?: string
 ): Promise<AskToolDispatch> {
   try {
-    return await runAllowlistedTool(name, rawArgs, context);
+    return await runAllowlistedTool(name, rawArgs, context, userQuestion);
   } catch (err) {
     logger.error("ask.tool_failed", { name, kind: err instanceof Error ? err.name : "unknown" });
     return { name, result: JSON.stringify({ error: "tool_failed", hint: ASK_TOOL_FAILURE_HINT }) };
@@ -415,7 +417,8 @@ export async function dispatchAskTool(
 async function runAllowlistedTool(
   name: string,
   rawArgs: unknown,
-  context?: AskSourceContext
+  context?: AskSourceContext,
+  userQuestion?: string
 ): Promise<AskToolDispatch> {
   if (name === ASK_TOOL_INDEXED_SOURCES) {
     const parsed = z.object({}).strict().safeParse(rawArgs ?? {});
@@ -448,14 +451,22 @@ async function runAllowlistedTool(
     if (!parsed.success) return invalidArgs(name);
     const blocked = rejectUnknownSource(name, parsed.data.source, context);
     if (blocked) return blocked;
-    return { name, result: JSON.stringify(await getBreakdownByField(parsed.data)) };
+    return attachUnusedFieldSearch(
+      { name, result: JSON.stringify(await getBreakdownByField(parsed.data)) },
+      parsed.data.source,
+      userQuestion
+    );
   }
   if (name === ASK_TOOL_DISTINCT) {
     const parsed = fieldArgsSchema.safeParse(rawArgs);
     if (!parsed.success) return invalidArgs(name);
     const blocked = rejectUnknownSource(name, parsed.data.source, context);
     if (blocked) return blocked;
-    return { name, result: JSON.stringify(await listDistinctValues(parsed.data)) };
+    return attachUnusedFieldSearch(
+      { name, result: JSON.stringify(await listDistinctValues(parsed.data)) },
+      parsed.data.source,
+      userQuestion
+    );
   }
   if (name === ASK_TOOL_DOCUMENT_BY_KEY) {
     const parsed = lookupArgsSchema.safeParse(rawArgs);
@@ -503,6 +514,51 @@ async function runAllowlistedTool(
     };
   }
   return { name, result: JSON.stringify({ error: "unknown_tool", hint: ASK_TOOL_FAILURE_HINT }) };
+}
+
+function catalogFieldUnusedOnSource(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  const row = payload as Record<string, unknown>;
+  if (typeof row.error === "string") return false;
+  const total = typeof row.total_indexed === "number" ? row.total_indexed : NaN;
+  const untagged = typeof row.untagged_count === "number" ? row.untagged_count : NaN;
+  return Number.isFinite(total) && total > 0 && untagged === total;
+}
+
+/**
+ * When a catalog field was never written on this source, attach a ranked search
+ * of the user question. Does not run for real 0s, by-key misses, or missing questions.
+ */
+async function attachUnusedFieldSearch(
+  dispatched: AskToolDispatch,
+  source: string | undefined,
+  userQuestion: string | undefined
+): Promise<AskToolDispatch> {
+  const question = userQuestion?.trim() ?? "";
+  if (!question) return dispatched;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(dispatched.result) as unknown;
+  } catch {
+    return dispatched;
+  }
+  if (!catalogFieldUnusedOnSource(payload)) return dispatched;
+  try {
+    const docs = await searchIndexedSample(question, source);
+    const body = payload as Record<string, unknown>;
+    body.search_fallback = {
+      sample: true,
+      empty: docs.length === 0,
+      documents: docs,
+      hint: ASK_SEARCH_NEIGHBOR_HINT,
+      content_trust: "untrusted",
+      note: "This catalog field is unused on this source. Ranked sample of the user question, not a census.",
+    };
+    return { name: dispatched.name, result: JSON.stringify(body) };
+  } catch (err) {
+    logger.error("ask.search_fallback_failed", { kind: err instanceof Error ? err.name : "unknown" });
+    return dispatched;
+  }
 }
 
 async function searchIndexedSample(

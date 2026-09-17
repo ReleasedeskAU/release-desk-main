@@ -8,6 +8,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Ask unused-field search:** When distinct/breakdown show a field unused on that source (`untagged_count === total_indexed`), the tool result also includes a ranked `search_fallback` of the **user question** (not a hardcoded name). Real 0s and document-by-key misses are unchanged. Auth unchanged.
+
 - **Ask list by source:** `list_documents_matching` accepts `source=<connector>` with no extra filter (still capped at 50). `source=all` with no filter is still rejected. Prompt unchanged. Engine `document-list` must be deployed with this. Auth unchanged.
 
 - **Ask hybrid search:** `search_indexed_documents` sends `retrieval=hybrid` to StaffLess admin search so paraphrased questions can use indexed vectors. Connectors work-items stay keyword (default). Engine must be deployed with the matching admin-search change. Auth unchanged.

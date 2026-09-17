@@ -62,6 +62,7 @@ export async function* runAskAgent(opts: {
     const { text, tools, sources } = await completeAskWithTools(openai, messages, {
       allowTicketTable: opts.history.length === 0,
       indexedSources,
+      userQuestion: opts.message,
     });
     logger.info("ask.agent_tools", { tools, n: tools.length });
     yield { type: "status", phase: "answering" };
@@ -94,7 +95,7 @@ async function loadAskIndexedSources(): Promise<AskIndexedSource[]> {
 export async function completeAskWithTools(
   openai: OpenAI,
   messages: ChatCompletionMessageParam[],
-  opts?: { allowTicketTable?: boolean; indexedSources?: AskIndexedSource[] }
+  opts?: { allowTicketTable?: boolean; indexedSources?: AskIndexedSource[]; userQuestion?: string }
 ): Promise<{ text: string; tools: string[]; sources: AskSource[] }> {
   const allowTicketTable = opts?.allowTicketTable ?? true;
   const indexedSources = opts?.indexedSources ?? [];
@@ -134,7 +135,12 @@ export async function completeAskWithTools(
       } catch {
         raw = {};
       }
-      const dispatched = await dispatchAskTool(call.function.name, raw, sourceContext);
+      const dispatched = await dispatchAskTool(
+        call.function.name,
+        raw,
+        sourceContext,
+        opts?.userQuestion
+      );
       if (call.function.name === ASK_TOOL_DOCUMENT_BY_KEY) {
         lastDocument = parseDocumentByKeyResult(dispatched.result);
       }

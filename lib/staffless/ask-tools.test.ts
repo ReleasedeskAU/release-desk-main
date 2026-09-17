@@ -368,6 +368,122 @@ describe("Ask date-range tools", () => {
     }
   });
 
+  it("attaches search_fallback only when a catalog field is unused on that source", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalPat = process.env.STAFFLESS_AI_PAT;
+    const originalUrl = process.env.STAFFLESS_AI_URL;
+    process.env.STAFFLESS_AI_PAT = "test-pat";
+    process.env.STAFFLESS_AI_URL = "http://staffless.test";
+    const paths: string[] = [];
+    globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
+      const href = String(url);
+      paths.push(href);
+      const body = JSON.parse(String(init?.body ?? "{}")) as { query?: string };
+      if (href.includes("document-distinct")) {
+        return new Response(
+          JSON.stringify({
+            field: "author",
+            source: "teams",
+            values: [],
+            untagged_count: 21,
+            total_indexed: 21,
+            truncated: false,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      assert.equal(typeof body.query, "string");
+      assert.equal(/kabir/i.test(body.query ?? ""), false);
+      return new Response(
+        JSON.stringify({
+          documents: [
+            {
+              document_id: "teams-1",
+              semantic_identifier: "Poster in Dev Team about standup",
+              source_type: "teams",
+              link: "https://teams.example/m1",
+              blurb: "posted an update",
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }) as typeof fetch;
+    try {
+      const unused = await dispatchAskTool(
+        ASK_TOOL_DISTINCT,
+        { field: "author", source: "teams" },
+        undefined,
+        "who posted an update in teams"
+      );
+      const unusedPayload = JSON.parse(unused.result) as {
+        untagged_count: number;
+        search_fallback?: { sample?: boolean; documents?: unknown[] };
+      };
+      assert.equal(unusedPayload.untagged_count, 21);
+      assert.equal(unusedPayload.search_fallback?.sample, true);
+      assert.equal(unusedPayload.search_fallback?.documents?.length, 1);
+      assert.equal(
+        paths.some((path) => path.includes("/admin/search")),
+        true
+      );
+
+      paths.length = 0;
+      globalThis.fetch = (async (url: unknown) => {
+        paths.push(String(url));
+        return new Response(
+          JSON.stringify({
+            field: "author",
+            source: "slack",
+            values: ["Ada"],
+            untagged_count: 2,
+            total_indexed: 21,
+            truncated: false,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }) as typeof fetch;
+      const used = await dispatchAskTool(
+        ASK_TOOL_DISTINCT,
+        { field: "author", source: "slack" },
+        undefined,
+        "who posted an update"
+      );
+      assert.equal(JSON.parse(used.result).search_fallback, undefined);
+      assert.equal(
+        paths.some((path) => path.includes("/admin/search")),
+        false
+      );
+
+      paths.length = 0;
+      globalThis.fetch = (async (url: unknown) => {
+        paths.push(String(url));
+        return new Response(
+          JSON.stringify({ found: false, key: "RD-1", source: "jira", note: "missing" }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }) as typeof fetch;
+      const byKey = await dispatchAskTool(
+        ASK_TOOL_DOCUMENT_BY_KEY,
+        { key: "RD-1", source: "jira" },
+        undefined,
+        "what is RD-1"
+      );
+      assert.equal(JSON.parse(byKey.result).found, false);
+      assert.equal(JSON.parse(byKey.result).search_fallback, undefined);
+      assert.equal(
+        paths.some((path) => path.includes("/admin/search")),
+        false
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;
+      else process.env.STAFFLESS_AI_PAT = originalPat;
+      if (originalUrl === undefined) delete process.env.STAFFLESS_AI_URL;
+      else process.env.STAFFLESS_AI_URL = originalUrl;
+    }
+  });
+
   it("allows list_documents_matching with only a date range", async () => {
     const originalFetch = globalThis.fetch;
     const originalPat = process.env.STAFFLESS_AI_PAT;
