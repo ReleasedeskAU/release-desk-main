@@ -12,7 +12,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- **Ask description/comments:** the system prompt no longer says Jira descriptions are not indexed. Identity tags stay on `get_document_by_key`; reading description or comments is `get_document_content`. Similarity search is still not a description-dedup field. Auth unchanged.
+- **Ask description/comments:** the system prompt no longer says Jira descriptions are not indexed. Identity tags stay on `get_document_by_key`; reading description, comments, or Slack thread replies is `get_document_content` (quote the body when asked for it; a short summary of that same body when asked what it is about). Similarity search is still not a description-dedup field. Ranked-search neighbor URLs are not shown as source chips. Auth unchanged.
 
 - **Ask Slack field schema:** `list_queryable_fields` sends `source` to StaffLess `document-fields` so Slack can publish its declared tags. Count/distinct still validate against `ALLOWED_COUNT_FIELDS` in Ask; Slack deselection is enforced on the engine. No prompt change. Auth unchanged.
 

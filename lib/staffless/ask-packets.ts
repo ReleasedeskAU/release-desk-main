@@ -5,6 +5,7 @@
 
 import { ASK_ADDITIONAL_CONTEXT, ASK_PUBLIC_UNAVAILABLE } from "@/lib/staffless/ask-copy";
 import type { AskGrounding } from "@/lib/staffless/ask-grounding";
+import { ASK_TOOL_SEARCH_INDEX } from "@/lib/staffless/ask-tools";
 
 /** Live StaffLess chat endpoints (nginx `/api` prefix). */
 export const STAFFLESS_CREATE_SESSION_PATH = "/api/chat/create-chat-session";
@@ -215,6 +216,15 @@ export function sourcesFromAskToolResult(raw: string): AskSource[] {
   }
   if (rec.found === true) push(sourceFromToolDoc(rec));
   return out;
+}
+
+/**
+ * Source chips for the answer. Ranked search is a neighbor sample — those URLs
+ * are not evidence the asked-for ticket is related, so they stay off the chips.
+ */
+export function sourcesToAttachFromTool(toolName: string, raw: string): AskSource[] {
+  if (toolName === ASK_TOOL_SEARCH_INDEX) return [];
+  return sourcesFromAskToolResult(raw);
 }
 
 /**

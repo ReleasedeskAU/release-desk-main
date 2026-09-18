@@ -10,6 +10,7 @@ import {
   mergeAskSources,
   safeHttpUrl,
   sourcesFromAskToolResult,
+  sourcesToAttachFromTool,
   STAFFLESS_CREATE_SESSION_PATH,
   STAFFLESS_SEND_CHAT_PATH,
 } from "./ask-packets";
@@ -134,6 +135,37 @@ describe("applyCitation / safeHttpUrl", () => {
     assert.equal(sources[0]?.source, "Slack");
     const merged = mergeAskSources(sources, sources);
     assert.equal(merged.length, 1);
+  });
+
+  it("does not attach ranked search hits as source chips", () => {
+    const payload = JSON.stringify({
+      documents: [
+        {
+          title: "BN-378: Ask Retrieval Quality",
+          source: "jira",
+          link: "https://example.atlassian.net/browse/BN-378",
+        },
+        {
+          title: "Confluence connector: sync errors",
+          source: "jira",
+          link: "https://example.atlassian.net/browse/BN-2",
+        },
+      ],
+    });
+    assert.equal(sourcesFromAskToolResult(payload).length, 2);
+    assert.equal(sourcesToAttachFromTool("search_indexed_documents", payload).length, 0);
+    assert.equal(
+      sourcesToAttachFromTool(
+        "get_document_by_key",
+        JSON.stringify({
+          found: true,
+          title: "BN-378: Ask Retrieval Quality",
+          source: "jira",
+          link: "https://example.atlassian.net/browse/BN-378",
+        })
+      ).length,
+      1
+    );
   });
 
   it("keeps two Slack posts that share a channel title but have different permalinks", () => {

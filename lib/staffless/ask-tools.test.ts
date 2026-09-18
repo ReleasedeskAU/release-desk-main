@@ -59,7 +59,7 @@ describe("Ask catalog tools", () => {
     assert.match(byName[ASK_TOOL_SEARCH_INDEX] ?? "", /document_id/);
     assert.match(byName[ASK_TOOL_DOCUMENT_CONTENT] ?? "", /already identified/);
     assert.match(byName[ASK_TOOL_DOCUMENT_CONTENT] ?? "", /at most 3 documents/);
-    assert.match(byName[ASK_TOOL_DOCUMENT_CONTENT] ?? "", /Do not refuse a description question/);
+    assert.match(byName[ASK_TOOL_DOCUMENT_CONTENT] ?? "", /Do not refuse a description or Slack-replies question/);
     assert.match(byName[ASK_TOOL_LIST_MATCHING] ?? "", /one connector/);
     assert.match(byName[ASK_TOOL_INDEXED_SOURCES] ?? "", /Created connector sources/);
     const live = buildAskTools(["bitbucket", "jira"]);
@@ -141,8 +141,11 @@ describe("Ask catalog tools", () => {
     assert.match(ASK_AGENT_SYSTEM, /due_before/);
     assert.match(ASK_AGENT_SYSTEM, /RD-9 is not RD-90/);
     assert.match(ASK_AGENT_SYSTEM, /get_document_by_key/);
-    assert.match(ASK_AGENT_SYSTEM, /get_document_content/);
+    assert.match(ASK_AGENT_SYSTEM, /Never a named ticket key/);
+    assert.match(ASK_AGENT_SYSTEM, /Do not list other search hits/);
     assert.match(ASK_AGENT_SYSTEM, /At most 3 per question/);
+    assert.match(ASK_AGENT_SYSTEM, /quote that indexed text/);
+    assert.match(ASK_AGENT_SYSTEM, /short summary of that same body/);
     assert.match(ASK_AGENT_SYSTEM, /Field\|Value/);
     assert.match(ASK_AGENT_SYSTEM, /resolved_status_category/);
     assert.match(ASK_AGENT_SYSTEM, /status_category/);
@@ -162,7 +165,9 @@ describe("Ask catalog tools", () => {
     assert.match(ASK_AGENT_SYSTEM, /list_indexed_sources/);
     assert.match(ASK_AGENT_SYSTEM, /Never claim a fixed vendor list/);
     assert.match(ASK_AGENT_SYSTEM, /channel tag without #/);
-    assert.match(ASK_AGENT_SYSTEM, /markdown link/);
+    assert.match(ASK_AGENT_SYSTEM, /folded into that document's body/);
+    assert.match(ASK_AGENT_SYSTEM, /Do not say replies could not be retrieved/);
+    assert.match(ASK_AGENT_SYSTEM, /include its link as markdown/);
     assert.match(ASK_AGENT_SYSTEM, /author tag/);
     assert.match(ASK_AGENT_SYSTEM, /empty: true/);
     assert.match(ASK_AGENT_SYSTEM, /which source said what/);

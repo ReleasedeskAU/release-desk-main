@@ -17,7 +17,7 @@ import {
 import { askGroundingFromTools } from "@/lib/staffless/ask-grounding";
 import type { DocumentByKeyResult } from "@/lib/staffless/ask-catalog";
 import { ASK_TOOL_DOCUMENT_BY_KEY, dispatchAskToolForTurn, type AskTurnLimits, buildAskTools } from "@/lib/staffless/ask-tools";
-import { sourcesFromAskToolResult, type AskEvent, type AskSource } from "@/lib/staffless/ask-packets";
+import { sourcesToAttachFromTool, type AskEvent, type AskSource } from "@/lib/staffless/ask-packets";
 import { logger } from "@/lib/logger";
 
 export const ASK_MAX_TOOL_ROUNDS = 8;
@@ -147,7 +147,7 @@ export async function completeAskWithTools(
       if (call.function.name === ASK_TOOL_DOCUMENT_BY_KEY) {
         lastDocument = parseDocumentByKeyResult(dispatched.result);
       }
-      for (const source of sourcesFromAskToolResult(dispatched.result)) {
+      for (const source of sourcesToAttachFromTool(call.function.name, dispatched.result)) {
         const key = source.url ?? source.id;
         if (seenSource.has(key)) continue;
         seenSource.add(key);
