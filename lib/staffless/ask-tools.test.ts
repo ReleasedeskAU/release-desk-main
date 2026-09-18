@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { ALLOWED_COUNT_FIELDS, PII_TAG_FIELDS } from "./ask-count";
-import { ASK_NO_TOOL_HINT, ASK_PUBLIC_UNAVAILABLE, ASK_TOOL_FAILURE_HINT, ASK_INVALID_ARGS_HINT } from "./ask-errors";
+import { ASK_NO_TOOL_HINT, ASK_PUBLIC_UNAVAILABLE, ASK_TOOL_FAILURE_HINT, ASK_INVALID_ARGS_HINT, ASK_DOCUMENT_CONTENT_ARGS_HINT, ASK_DOCUMENT_CONTENT_FAILURE_HINT } from "./ask-errors";
 import { ASK_AGENT_SYSTEM } from "./ask-copy";
 import { ASK_MAX_TOOL_ROUNDS, ASK_OPENAI_MAX_RETRIES } from "./ask-agent";
 import {
@@ -606,7 +606,13 @@ describe("Ask date-range tools", () => {
       const payload = JSON.parse(result.result) as {
         sample: boolean;
         empty: boolean;
-        documents: Array<{ title: string; link: string | null; blurb: string | null; document_id?: string | null }>;
+        documents: Array<{
+          title: string;
+          link: string | null;
+          blurb: string | null;
+          document_id?: string | null;
+          id?: string | null;
+        }>;
         hint?: string;
         content_trust?: string;
       };
@@ -616,6 +622,7 @@ describe("Ask date-range tools", () => {
       assert.equal(payload.documents[0]?.link, "https://releasedesk.slack.com/archives/C123/p1");
       assert.equal(payload.documents[0]?.blurb, "matched reply text");
       assert.equal(payload.documents[0]?.document_id, "slack-1");
+      assert.equal(payload.documents[0]?.id, "slack-1");
       assert.match(payload.hint ?? "", /neighbors/);
       assert.equal(payload.content_trust, "untrusted");
       assert.equal((sent as { retrieval?: string }).retrieval, "hybrid");
@@ -664,6 +671,57 @@ describe("Ask date-range tools", () => {
     }
   });
 
+  it("uses OpenSearch document_id for Slack search rows, not the title prefix", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalPat = process.env.STAFFLESS_AI_PAT;
+    const originalUrl = process.env.STAFFLESS_AI_URL;
+    process.env.STAFFLESS_AI_PAT = "test-pat";
+    process.env.STAFFLESS_AI_URL = "http://staffless.test";
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          documents: [
+            {
+              document_id: "C123__1.2",
+              semantic_identifier: "admin in #social: TESTFACT-A2: release blocker",
+              source_type: "slack",
+              blurb: "parent message",
+              metadata: { channel: "social", author: "admin" },
+            },
+            {
+              document_id: "C123__1.2",
+              semantic_identifier: "admin in #social: TESTFACT-A2: release blocker",
+              source_type: "slack",
+              blurb: "reply: delayed",
+              metadata: { channel: "social", author: "admin" },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )) as typeof fetch;
+    try {
+      const result = await dispatchAskTool(ASK_TOOL_SEARCH_INDEX, {
+        query: "TESTFACT-A2 replies",
+        source: "slack",
+      });
+      const payload = JSON.parse(result.result) as {
+        documents: Array<{ id?: string; document_id?: string | null; blurb?: string | null }>;
+      };
+      assert.equal(payload.documents.length, 1);
+      assert.equal(payload.documents[0]?.document_id, "C123__1.2");
+      assert.equal(payload.documents[0]?.id, "C123__1.2");
+      assert.equal(payload.documents[0]?.id === "admin in #social", false);
+      assert.match(payload.documents[0]?.blurb ?? "", /parent message/);
+      assert.match(payload.documents[0]?.blurb ?? "", /reply: delayed/);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;
+      else process.env.STAFFLESS_AI_PAT = originalPat;
+      if (originalUrl === undefined) delete process.env.STAFFLESS_AI_URL;
+      else process.env.STAFFLESS_AI_URL = originalUrl;
+    }
+  });
+
   it("fetches indexed body by document_id", async () => {
     const originalFetch = globalThis.fetch;
     const originalPat = process.env.STAFFLESS_AI_PAT;
@@ -693,10 +751,14 @@ describe("Ask date-range tools", () => {
       const extra = await dispatchAskTool(ASK_TOOL_DOCUMENT_CONTENT, {
         document_id: "slack-1",
         extra: true,
+        title: "admin in #social: hello",
       });
-      assert.match(extra.result, /invalid_args/);
+      assert.equal(JSON.parse(extra.result).found, true);
+      assert.equal(JSON.parse(extra.result).document_id, "slack-1");
       const empty = await dispatchAskTool(ASK_TOOL_DOCUMENT_CONTENT, { document_id: "" });
       assert.match(empty.result, /invalid_args/);
+      assert.match(empty.result, /document_id/);
+      assert.equal(/breakdowns by field/.test(empty.result), false);
       const blocked = await dispatchAskTool(
         ASK_TOOL_DOCUMENT_CONTENT,
         { document_id: "slack-1", source: "confluence" },
@@ -809,6 +871,52 @@ describe("Ask date-range tools", () => {
     }
   });
 
+  it("maps a missing body endpoint to found false instead of a counts pivot", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalPat = process.env.STAFFLESS_AI_PAT;
+    const originalUrl = process.env.STAFFLESS_AI_URL;
+    process.env.STAFFLESS_AI_PAT = "test-pat";
+    process.env.STAFFLESS_AI_URL = "http://staffless.test";
+    globalThis.fetch = (async () =>
+      new Response("not found", { status: 404, headers: { "Content-Type": "text/plain" } })) as typeof fetch;
+    try {
+      const missing = await dispatchAskTool(ASK_TOOL_DOCUMENT_CONTENT, { document_id: "C123__1.2" });
+      const miss = JSON.parse(missing.result) as { found?: boolean; error?: string; hint?: string };
+      assert.equal(miss.found, false);
+      assert.equal(miss.error, undefined);
+      assert.equal(/breakdowns by field/.test(miss.hint ?? ""), false);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;
+      else process.env.STAFFLESS_AI_PAT = originalPat;
+      if (originalUrl === undefined) delete process.env.STAFFLESS_AI_URL;
+      else process.env.STAFFLESS_AI_URL = originalUrl;
+    }
+  });
+
+  it("does not offer counts when the body fetch is unavailable", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalPat = process.env.STAFFLESS_AI_PAT;
+    const originalUrl = process.env.STAFFLESS_AI_URL;
+    process.env.STAFFLESS_AI_PAT = "test-pat";
+    process.env.STAFFLESS_AI_URL = "http://staffless.test";
+    globalThis.fetch = (async () =>
+      new Response("unavailable", { status: 502, headers: { "Content-Type": "text/plain" } })) as typeof fetch;
+    try {
+      const result = await dispatchAskTool(ASK_TOOL_DOCUMENT_CONTENT, { document_id: "C123__1.2" });
+      const payload = JSON.parse(result.result) as { error?: string; hint?: string };
+      assert.equal(payload.error, "tool_failed");
+      assert.match(payload.hint ?? "", /full body could not be loaded/);
+      assert.equal(/Offer exact counts/.test(payload.hint ?? ""), false);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;
+      else process.env.STAFFLESS_AI_PAT = originalPat;
+      if (originalUrl === undefined) delete process.env.STAFFLESS_AI_URL;
+      else process.env.STAFFLESS_AI_URL = originalUrl;
+    }
+  });
+
   it("rejects a fourth get_document_content call in the same turn without fetching", async () => {
     const originalFetch = globalThis.fetch;
     const originalPat = process.env.STAFFLESS_AI_PAT;
@@ -861,12 +969,14 @@ describe("Ask date-range tools", () => {
 
 describe("Ask graceful failures", () => {
   it("keeps user-facing failures plain and free of internals", () => {
-    const blob = `${ASK_PUBLIC_UNAVAILABLE}\n${ASK_TOOL_FAILURE_HINT}\n${ASK_NO_TOOL_HINT}\n${ASK_INVALID_ARGS_HINT}`;
+    const blob = `${ASK_PUBLIC_UNAVAILABLE}\n${ASK_TOOL_FAILURE_HINT}\n${ASK_NO_TOOL_HINT}\n${ASK_INVALID_ARGS_HINT}\n${ASK_DOCUMENT_CONTENT_ARGS_HINT}\n${ASK_DOCUMENT_CONTENT_FAILURE_HINT}`;
     assert.match(ASK_INVALID_ARGS_HINT, /Retry with published arguments/);
     assert.match(ASK_INVALID_ARGS_HINT, /filter_field=parent/);
     assert.match(ASK_PUBLIC_UNAVAILABLE, /exact counts and breakdowns/i);
     assert.match(ASK_TOOL_FAILURE_HINT, /listing matching documents/);
     assert.match(ASK_NO_TOOL_HINT, /say clearly what they asked for/i);
+    assert.match(ASK_DOCUMENT_CONTENT_ARGS_HINT, /document_id/);
+    assert.equal(/Offer exact counts/.test(ASK_DOCUMENT_CONTENT_FAILURE_HINT), false);
     for (const banned of ["traceback", "exception", "stack", "openai", "onyx", "postgres", "ECONNREFUSED"]) {
       assert.equal(new RegExp(banned, "i").test(blob), false, banned);
     }

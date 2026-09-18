@@ -15,7 +15,12 @@ import {
   type CountFilterField,
 } from "@/lib/staffless/ask-catalog";
 import { ASK_SEARCH_EMPTY_HINT, ASK_SEARCH_NEIGHBOR_HINT, ASK_UNTRUSTED_INDEX_NOTE } from "@/lib/staffless/ask-copy";
-import { ASK_INVALID_ARGS_HINT, ASK_TOOL_FAILURE_HINT } from "@/lib/staffless/ask-errors";
+import {
+  ASK_DOCUMENT_CONTENT_ARGS_HINT,
+  ASK_DOCUMENT_CONTENT_FAILURE_HINT,
+  ASK_INVALID_ARGS_HINT,
+  ASK_TOOL_FAILURE_HINT,
+} from "@/lib/staffless/ask-errors";
 import {
   ASK_SOURCE_ALL,
   askSourceSlug,
@@ -23,7 +28,7 @@ import {
   type AskIndexedSource,
   type AskSourceContext,
 } from "@/lib/staffless/ask-source";
-import { stafflessFetch } from "@/lib/staffless/client";
+import { StafflessApiError, stafflessFetch } from "@/lib/staffless/client";
 import { mapSearchDocsToWorkItems, type StafflessSearchDoc } from "@/lib/staffless/map-search-docs";
 import { logger } from "@/lib/logger";
 
@@ -158,6 +163,19 @@ const contentArgsSchema = z
     source: SOURCE_ENUM.optional(),
   })
   .strict();
+
+/**
+ * Keep document_id and optional source. The model often adds title/link.
+ * Those extras must not fail the body read.
+ */
+function pickContentArgs(raw: unknown): unknown {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const obj = raw as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  if ("document_id" in obj) out.document_id = obj.document_id;
+  if ("source" in obj) out.source = obj.source;
+  return out;
+}
 
 function fnTool(
   name: string,
@@ -417,7 +435,8 @@ function rejectUnknownSource(
 }
 
 /**
- * Run one allow-listed Ask tool. Unknown names and extra args are rejected.
+ * Run one allow-listed Ask tool. Unknown names are rejected. Extra keys on
+ * get_document_content are ignored so a title/link does not fail the body read.
  * StaffLess failures become a structured tool result — they do not throw to the UI.
  * @param name - Tool name from the model.
  * @param rawArgs - JSON object the model supplied.
@@ -538,8 +557,8 @@ async function runAllowlistedTool(
     };
   }
   if (name === ASK_TOOL_DOCUMENT_CONTENT) {
-    const parsed = contentArgsSchema.safeParse(rawArgs);
-    if (!parsed.success) return invalidArgs(name);
+    const parsed = contentArgsSchema.safeParse(pickContentArgs(rawArgs));
+    if (!parsed.success) return invalidArgs(name, ASK_DOCUMENT_CONTENT_ARGS_HINT);
     const blocked = rejectUnknownSource(name, parsed.data.source, context);
     if (blocked) return blocked;
     return { name, result: JSON.stringify(await getIndexedDocumentContent(parsed.data)) };
@@ -653,10 +672,14 @@ async function searchIndexedSample(
   for (const doc of raw) {
     const id = typeof doc.document_id === "string" ? doc.document_id : "";
     const blurb = cappedSearchBlurb(doc.blurb);
-    if (id && blurb) blurbs.set(id, blurb);
+    if (!id || !blurb) continue;
+    const prev = blurbs.get(id);
+    // Same Slack thread can hit as parent + reply chunks; keep both snippets.
+    blurbs.set(id, prev && !prev.includes(blurb) ? `${prev}\n${blurb}`.slice(0, MAX_SEARCH_BLURB_CHARS) : blurb);
   }
   return mapSearchDocsToWorkItems(raw).slice(0, MAX_SEARCH_DOCS).map((row) => ({
-    id: row.externalId,
+    // Must be OpenSearch document_id. Slack titles like "admin in #social" are not ids.
+    id: row.id,
     document_id: row.id || null,
     title: row.title,
     status: row.status,
@@ -674,9 +697,22 @@ async function getIndexedDocumentContent(args: {
 }): Promise<Record<string, unknown>> {
   const json: Record<string, string> = { document_id: args.document_id };
   if (args.source && args.source !== ASK_SOURCE_ALL) json.source = args.source;
-  const result = await stafflessFetch<Record<string, unknown>>(STAFFLESS_DOCUMENT_CONTENT_PATH, {
-    json,
-  });
+  let result: Record<string, unknown> | null;
+  try {
+    result = await stafflessFetch<Record<string, unknown>>(STAFFLESS_DOCUMENT_CONTENT_PATH, {
+      json,
+    });
+  } catch (err) {
+    if (err instanceof StafflessApiError && err.status >= 400 && err.status < 500) {
+      return {
+        found: false,
+        document_id: args.document_id,
+        hint: "No indexed document with this id, or it is not readable in this tenant.",
+      };
+    }
+    logger.error("ask.document_content_failed", { kind: err instanceof Error ? err.name : "unknown" });
+    return { error: "tool_failed", hint: ASK_DOCUMENT_CONTENT_FAILURE_HINT };
+  }
   if (result?.found !== true) {
     return {
       found: false,

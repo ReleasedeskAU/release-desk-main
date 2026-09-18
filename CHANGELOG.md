@@ -8,7 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **Ask document body:** `get_document_content` reads one indexed document by OpenSearch `document_id` (from search/list rows). Engine `POST /admin/document-content` uses the same tenant + ACL filters as admin search; ACL miss is `found: false`. Body is capped at 16 chunks / 24k chars with an explicit `truncated` flag. Max 3 fetches per Ask turn. Body text is not logged. Auth unchanged (`readonly` Ask, engine admin PAT).
+- **Ask document body:** `get_document_content` reads one indexed document by OpenSearch `document_id` (from search/list rows). Extra title/link keys are ignored. Search rows expose that OpenSearch id (not a Slack title prefix like `admin in #social`). Engine `POST /admin/document-content` uses the same tenant + ACL filters as admin search; ACL miss or a 4xx is `found: false`. A 5xx does not pivot to counts. Body is capped at 16 chunks / 24k chars with an explicit `truncated` flag. Max 3 fetches per Ask turn. Body text is not logged. Auth unchanged (`readonly` Ask, engine admin PAT).
 
 ### Changed
 
