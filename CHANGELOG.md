@@ -12,6 +12,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Ask document body quota/prompt:** `get_document_content` quota no longer increments on `invalid_args` (a bad `document_id` does not burn one of the 3 per-turn fetches). `ASK_AGENT_SYSTEM` lists `document_id` on `list_documents_matching` rows and tells the model not to use body-fetch for search, counts, source lists, or parent/child lookups. Auth unchanged.
+
 - **Ask description/comments:** the system prompt no longer says Jira descriptions are not indexed. Identity tags stay on `get_document_by_key`; reading description, comments, or Slack thread replies is `get_document_content` (quote the body when asked for it; a short summary of that same body when asked what it is about). Similarity search is still not a description-dedup field. Ranked-search neighbor URLs are not shown as source chips. Auth unchanged.
 
 - **Ask Slack field schema:** `list_queryable_fields` sends `source` to StaffLess `document-fields` so Slack can publish its declared tags. Count/distinct still validate against `ALLOWED_COUNT_FIELDS` in Ask; Slack deselection is enforced on the engine. No prompt change. Auth unchanged.
@@ -25,6 +27,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Ask hybrid search:** `search_indexed_documents` sends `retrieval=hybrid` to StaffLess admin search so paraphrased questions can use indexed vectors. Connectors work-items stay keyword (default). Engine must be deployed with the matching admin-search change. Auth unchanged.
 
 ### Security
+
+- **Ask PII tag blocklist:** `sender_email` and `email` join `assignee_email` / `reporter_email` so those keys cannot appear in catalog field projection. Count/filter enum unchanged. Auth unchanged.
 
 - **Ask rate limit:** `POST /api/ask` is limited to 10 requests per minute per Clerk user and 60 per minute per Clerk org (when present), via Upstash Redis sliding window. Over limit returns 429 with the existing public unavailable copy and Retry-After. Redis errors fail closed. No limit when Redis env is unset (local). Auth still `readonly`. No user ids in error JSON.
 
