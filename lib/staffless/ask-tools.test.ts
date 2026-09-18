@@ -144,8 +144,11 @@ describe("Ask catalog tools", () => {
     assert.match(ASK_AGENT_SYSTEM, /Never a named ticket key/);
     assert.match(ASK_AGENT_SYSTEM, /Do not list other search hits/);
     assert.match(ASK_AGENT_SYSTEM, /At most 3 per question/);
-    assert.match(ASK_AGENT_SYSTEM, /quote that indexed text/);
+    assert.match(ASK_AGENT_SYSTEM, /Rows include document_id, source/);
+    assert.match(ASK_AGENT_SYSTEM, /never a ticket key, title, or URL/);
+    assert.match(ASK_AGENT_SYSTEM, /quote description\/comments\/replies/);
     assert.match(ASK_AGENT_SYSTEM, /short summary of that same body/);
+    assert.match(ASK_AGENT_SYSTEM, /parent\/child lookup/);
     assert.match(ASK_AGENT_SYSTEM, /Field\|Value/);
     assert.match(ASK_AGENT_SYSTEM, /resolved_status_category/);
     assert.match(ASK_AGENT_SYSTEM, /status_category/);
@@ -957,6 +960,47 @@ describe("Ask date-range tools", () => {
       assert.equal(JSON.parse(fourth.result).found, undefined);
       assert.equal(fetches, 3);
       assert.equal(turn.documentContentCalls, 3);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;
+      else process.env.STAFFLESS_AI_PAT = originalPat;
+      if (originalUrl === undefined) delete process.env.STAFFLESS_AI_URL;
+      else process.env.STAFFLESS_AI_URL = originalUrl;
+    }
+  });
+
+  it("does not consume get_document_content quota on invalid_args", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalPat = process.env.STAFFLESS_AI_PAT;
+    const originalUrl = process.env.STAFFLESS_AI_URL;
+    process.env.STAFFLESS_AI_PAT = "test-pat";
+    process.env.STAFFLESS_AI_URL = "http://staffless.test";
+    let fetches = 0;
+    globalThis.fetch = (async () => {
+      fetches += 1;
+      return new Response(
+        JSON.stringify({
+          found: true,
+          document_id: "doc-ok",
+          content: "ok",
+          truncated: false,
+          chunk_count: 1,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }) as typeof fetch;
+    try {
+      const turn = { documentContentCalls: 0 };
+      for (let i = 0; i < 3; i += 1) {
+        const invalid = await dispatchAskToolForTurn(ASK_TOOL_DOCUMENT_CONTENT, { document_id: "" }, turn);
+        assert.match(invalid.result, /invalid_args/);
+      }
+      assert.equal(turn.documentContentCalls, 0);
+      assert.equal(fetches, 0);
+      const valid = await dispatchAskToolForTurn(ASK_TOOL_DOCUMENT_CONTENT, { document_id: "doc-ok" }, turn);
+      assert.equal(JSON.parse(valid.result).found, true);
+      assert.equal(fetches, 1);
+      assert.equal(turn.documentContentCalls, 1);
     } finally {
       globalThis.fetch = originalFetch;
       if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;

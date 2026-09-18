@@ -614,15 +614,32 @@ async function attachUnusedFieldSearch(
 export type AskTurnLimits = { documentContentCalls: number };
 
 /**
+ * Whether a content-tool result was a local validation miss (no engine fetch).
+ *
+ * @param result - JSON string from dispatchAskTool.
+ * @returns True only when error is invalid_args.
+ */
+function isInvalidArgsResult(result: string): boolean {
+  try {
+    const payload = JSON.parse(result) as { error?: unknown };
+    return payload.error === "invalid_args";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Dispatch one tool and enforce the per-turn get_document_content cap.
- * Mutates turn.documentContentCalls when a content fetch is attempted.
+ * Counts a content call only when dispatch did not return invalid_args, so a
+ * bad document_id does not burn quota. Past the cap returns limit_exceeded
+ * without fetching.
  *
  * @param name - Tool name from the model.
  * @param rawArgs - JSON object the model supplied.
  * @param turn - Per-Ask-turn counters (mutated).
  * @param context - This turn's created connector sources.
  * @param userQuestion - Current user turn for unused-field search fallback.
- * @returns Tool JSON result. Content past the cap returns limit_exceeded without fetching.
+ * @returns Tool JSON result.
  */
 export async function dispatchAskToolForTurn(
   name: string,
@@ -631,19 +648,20 @@ export async function dispatchAskToolForTurn(
   context?: AskSourceContext,
   userQuestion?: string
 ): Promise<AskToolDispatch> {
-  if (name === ASK_TOOL_DOCUMENT_CONTENT) {
-    if (turn.documentContentCalls >= ASK_MAX_DOCUMENT_CONTENT_PER_TURN) {
-      return {
-        name,
-        result: JSON.stringify({
-          error: "limit_exceeded",
-          hint: "get_document_content is limited to 3 documents per question. Use search or list to choose which to read.",
-        }),
-      };
-    }
+  if (name === ASK_TOOL_DOCUMENT_CONTENT && turn.documentContentCalls >= ASK_MAX_DOCUMENT_CONTENT_PER_TURN) {
+    return {
+      name,
+      result: JSON.stringify({
+        error: "limit_exceeded",
+        hint: "get_document_content is limited to 3 documents per question. Use search or list to choose which to read.",
+      }),
+    };
+  }
+  const dispatched = await dispatchAskTool(name, rawArgs, context, userQuestion);
+  if (name === ASK_TOOL_DOCUMENT_CONTENT && !isInvalidArgsResult(dispatched.result)) {
     turn.documentContentCalls += 1;
   }
-  return dispatchAskTool(name, rawArgs, context, userQuestion);
+  return dispatched;
 }
 
 async function searchIndexedSample(
