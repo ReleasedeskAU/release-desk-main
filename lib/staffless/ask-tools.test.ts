@@ -168,6 +168,10 @@ describe("Ask catalog tools", () => {
     assert.match(ASK_AGENT_SYSTEM, /list_indexed_sources/);
     assert.match(ASK_AGENT_SYSTEM, /Never claim a fixed vendor list/);
     assert.match(ASK_AGENT_SYSTEM, /channel tag without #/);
+    assert.match(ASK_AGENT_SYSTEM, /filter_field=channel is only a stored Slack channel tag/);
+    assert.match(ASK_AGENT_SYSTEM, /ticket-like token from the question as channel/);
+    assert.match(ASK_AGENT_SYSTEM, /What was said in the <token> Slack thread/);
+    assert.match(ASK_AGENT_SYSTEM, /search_indexed_documents source=slack query=<token>/);
     assert.match(ASK_AGENT_SYSTEM, /folded into that document's body/);
     assert.match(ASK_AGENT_SYSTEM, /Do not say replies could not be retrieved/);
     assert.match(ASK_AGENT_SYSTEM, /include its link as markdown/);

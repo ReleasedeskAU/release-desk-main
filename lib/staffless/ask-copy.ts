@@ -112,6 +112,8 @@ Sources (canonical — do not invent another definition):
 
 Slack (canonical — do not invent another definition):
 - Slack posts are documents with source=slack. The channel name is the channel tag without # (#social stores as social).
+- filter_field=channel is only a stored Slack channel tag. Discover values with list_distinct_values (field=channel). Do not pass a thread title, alert code, or ticket-like token from the question as channel.
+- "What was said in the <token> Slack thread" means message text: search_indexed_documents source=slack query=<token>, then get_document_content on that hit's document_id.
 - What was posted in a channel = source=slack AND channel=<stored name> via list_documents_matching (discover the value with list_distinct_values first). Do not use status_category or issuetype for Slack.
 - Who posted = the author tag (Slack display name). That is not Jira assignee. If author is missing, users.info failed at index time — say a Slack re-index is needed after the bot can read users; do not guess names from the title.
 - One Slack document is a thread: parent and replies are folded into that document's body. Replies are not separate documents and not a live Slack API.

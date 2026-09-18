@@ -12,6 +12,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Ask Slack thread vs channel:** `ASK_AGENT_SYSTEM` treats `filter_field=channel` as a stored Slack channel tag only (discover with `list_distinct_values`). A thread token is message text: `search_indexed_documents` then `get_document_content`. Genuine channel questions still use `channel=<stored name>`. Auth unchanged.
+
 - **Ask document body quota/prompt:** `get_document_content` quota no longer increments on `invalid_args` (a bad `document_id` does not burn one of the 3 per-turn fetches). `ASK_AGENT_SYSTEM` lists `document_id` on `list_documents_matching` rows and tells the model not to use body-fetch for search, counts, source lists, or parent/child lookups. Auth unchanged.
 
 - **Ask description/comments:** the system prompt no longer says Jira descriptions are not indexed. Identity tags stay on `get_document_by_key`; reading description, comments, or Slack thread replies is `get_document_content` (quote the body when asked for it; a short summary of that same body when asked what it is about). Similarity search is still not a description-dedup field. Ranked-search neighbor URLs are not shown as source chips. Auth unchanged.
