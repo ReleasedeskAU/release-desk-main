@@ -59,6 +59,7 @@ describe("Ask catalog tools", () => {
     assert.match(byName[ASK_TOOL_SEARCH_INDEX] ?? "", /document_id/);
     assert.match(byName[ASK_TOOL_DOCUMENT_CONTENT] ?? "", /already identified/);
     assert.match(byName[ASK_TOOL_DOCUMENT_CONTENT] ?? "", /at most 3 documents/);
+    assert.match(byName[ASK_TOOL_DOCUMENT_CONTENT] ?? "", /Do not refuse a description question/);
     assert.match(byName[ASK_TOOL_LIST_MATCHING] ?? "", /one connector/);
     assert.match(byName[ASK_TOOL_INDEXED_SOURCES] ?? "", /Created connector sources/);
     const live = buildAskTools(["bitbucket", "jira"]);
@@ -148,6 +149,8 @@ describe("Ask catalog tools", () => {
     assert.equal(/resolved_statuses/.test(ASK_AGENT_SYSTEM), false);
     assert.match(ASK_AGENT_SYSTEM, /candidates, not confirmed duplicates/);
     assert.match(ASK_AGENT_SYSTEM, /title\/summary match/);
+    assert.equal(/description is not indexed/.test(ASK_AGENT_SYSTEM), false);
+    assert.match(ASK_AGENT_SYSTEM, /Do not say they are not indexed/);
     assert.equal(/Q26|Q24|Q33/i.test(ASK_AGENT_SYSTEM), false);
     assert.match(ASK_AGENT_SYSTEM, /filter_field=parent/);
     assert.match(ASK_AGENT_SYSTEM, /never a parent= argument/);
