@@ -83,6 +83,7 @@ export type DocumentMatchArgs = DateRangeArgs & {
 };
 
 export type MatchingDocument = {
+  document_id: string | null;
   key: string | null;
   title: string | null;
   link: string | null;
@@ -315,6 +316,10 @@ function mapMatchingDocument(
   listSource?: string
 ): MatchingDocument {
   return {
+    document_id:
+      typeof row.document_id === "string" && row.document_id.trim()
+        ? row.document_id.trim().slice(0, 1024)
+        : null,
     key: typeof row?.key === "string" && row.key.trim() ? row.key : null,
     title: typeof row?.title === "string" ? row.title : null,
     link: typeof row?.link === "string" ? row.link : null,

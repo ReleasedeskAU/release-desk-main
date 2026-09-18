@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   ASK_TOOL_DOCUMENT_BY_KEY,
+  ASK_TOOL_DOCUMENT_CONTENT,
   ASK_TOOL_GET_VERIFIED_COUNT,
   ASK_TOOL_LIST_MATCHING,
   ASK_TOOL_SEARCH_INDEX,
@@ -17,6 +18,7 @@ describe("askGroundingFromTools", () => {
 
   it("marks semantic search as search-based", () => {
     assert.equal(askGroundingFromTools([ASK_TOOL_SEARCH_INDEX]), "search");
+    assert.equal(askGroundingFromTools([ASK_TOOL_DOCUMENT_CONTENT]), "search");
   });
 
   it("marks mixed catalog + search, and omits a badge when no tools ran", () => {

@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Ask document body:** `get_document_content` reads one indexed document by OpenSearch `document_id` (from search/list rows). Engine `POST /admin/document-content` uses the same tenant + ACL filters as admin search; ACL miss is `found: false`. Body is capped at 16 chunks / 24k chars with an explicit `truncated` flag. Max 3 fetches per Ask turn. Body text is not logged. Auth unchanged (`readonly` Ask, engine admin PAT).
+
 ### Changed
 
 - **Ask Slack field schema:** `list_queryable_fields` sends `source` to StaffLess `document-fields` so Slack can publish its declared tags. Count/distinct still validate against `ALLOWED_COUNT_FIELDS` in Ask; Slack deselection is enforced on the engine. No prompt change. Auth unchanged.

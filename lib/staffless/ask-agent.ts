@@ -16,7 +16,7 @@ import {
 } from "@/lib/staffless/ask-format";
 import { askGroundingFromTools } from "@/lib/staffless/ask-grounding";
 import type { DocumentByKeyResult } from "@/lib/staffless/ask-catalog";
-import { ASK_TOOL_DOCUMENT_BY_KEY, buildAskTools, dispatchAskTool } from "@/lib/staffless/ask-tools";
+import { ASK_TOOL_DOCUMENT_BY_KEY, dispatchAskToolForTurn, type AskTurnLimits, buildAskTools } from "@/lib/staffless/ask-tools";
 import { sourcesFromAskToolResult, type AskEvent, type AskSource } from "@/lib/staffless/ask-packets";
 import { logger } from "@/lib/logger";
 
@@ -105,6 +105,7 @@ export async function completeAskWithTools(
   const tools: string[] = [];
   const sources: AskSource[] = [];
   const seenSource = new Set<string>();
+  const turn: AskTurnLimits = { documentContentCalls: 0 };
   let lastDocument: DocumentByKeyResult | null = null;
   for (let round = 0; round < ASK_MAX_TOOL_ROUNDS; round += 1) {
     const res = await openai.chat.completions.create({
@@ -136,9 +137,10 @@ export async function completeAskWithTools(
       } catch {
         raw = {};
       }
-      const dispatched = await dispatchAskTool(
+      const dispatched = await dispatchAskToolForTurn(
         call.function.name,
         raw,
+        turn,
         sourceContext,
         opts?.userQuestion
       );

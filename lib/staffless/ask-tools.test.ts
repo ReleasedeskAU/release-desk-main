@@ -8,14 +8,19 @@ import {
   ASK_TOOL_BREAKDOWN,
   ASK_TOOL_DISTINCT,
   ASK_TOOL_DOCUMENT_BY_KEY,
+  ASK_TOOL_DOCUMENT_CONTENT,
   ASK_TOOL_GET_VERIFIED_COUNT,
   ASK_TOOL_LIST_MATCHING,
   ASK_TOOL_QUERYABLE_FIELDS,
   ASK_TOOL_INDEXED_SOURCES,
   ASK_TOOL_SEARCH_INDEX,
   ASK_TOOLS,
+  ASK_DOCUMENT_CONTENT_CHAR_CAP,
+  ASK_MAX_DOCUMENT_CONTENT_PER_TURN,
+  STAFFLESS_DOCUMENT_CONTENT_PATH,
   buildAskTools,
   dispatchAskTool,
+  dispatchAskToolForTurn,
   liftPublishedFieldArgs,
 } from "./ask-tools";
 
@@ -28,10 +33,11 @@ const CATALOG_TOOLS = [
   ASK_TOOL_LIST_MATCHING,
   ASK_TOOL_QUERYABLE_FIELDS,
   ASK_TOOL_SEARCH_INDEX,
+  ASK_TOOL_DOCUMENT_CONTENT,
 ];
 
 describe("Ask catalog tools", () => {
-  it("exposes eight distinct tools with non-overlapping jobs", () => {
+  it("exposes nine distinct tools with non-overlapping jobs", () => {
     const names = ASK_TOOLS.map((t) => (t.type === "function" ? t.function.name : "")).sort();
     assert.deepEqual(names, [...CATALOG_TOOLS].sort());
     const byName = Object.fromEntries(
@@ -45,10 +51,14 @@ describe("Ask catalog tools", () => {
     assert.match(byName[ASK_TOOL_DISTINCT] ?? "", /stored values/);
     assert.match(byName[ASK_TOOL_DOCUMENT_BY_KEY] ?? "", /exact lookup/i);
     assert.match(byName[ASK_TOOL_LIST_MATCHING] ?? "", /omit extra filters/);
+    assert.match(byName[ASK_TOOL_LIST_MATCHING] ?? "", /document_id/);
     assert.match(byName[ASK_TOOL_QUERYABLE_FIELDS] ?? "", /Published fields/);
     assert.match(byName[ASK_TOOL_SEARCH_INDEX] ?? "", /Ranked sample/);
     assert.match(byName[ASK_TOOL_SEARCH_INDEX] ?? "", /Never use for how-many/);
     assert.match(byName[ASK_TOOL_SEARCH_INDEX] ?? "", /empty:true/);
+    assert.match(byName[ASK_TOOL_SEARCH_INDEX] ?? "", /document_id/);
+    assert.match(byName[ASK_TOOL_DOCUMENT_CONTENT] ?? "", /already identified/);
+    assert.match(byName[ASK_TOOL_DOCUMENT_CONTENT] ?? "", /at most 3 documents/);
     assert.match(byName[ASK_TOOL_LIST_MATCHING] ?? "", /one connector/);
     assert.match(byName[ASK_TOOL_INDEXED_SOURCES] ?? "", /Created connector sources/);
     const live = buildAskTools(["bitbucket", "jira"]);
@@ -130,6 +140,8 @@ describe("Ask catalog tools", () => {
     assert.match(ASK_AGENT_SYSTEM, /due_before/);
     assert.match(ASK_AGENT_SYSTEM, /RD-9 is not RD-90/);
     assert.match(ASK_AGENT_SYSTEM, /get_document_by_key/);
+    assert.match(ASK_AGENT_SYSTEM, /get_document_content/);
+    assert.match(ASK_AGENT_SYSTEM, /At most 3 per question/);
     assert.match(ASK_AGENT_SYSTEM, /Field\|Value/);
     assert.match(ASK_AGENT_SYSTEM, /resolved_status_category/);
     assert.match(ASK_AGENT_SYSTEM, /status_category/);
@@ -163,7 +175,7 @@ describe("Ask catalog tools", () => {
     );
     assert.match(
       listTool && listTool.type === "function" ? listTool.function.description ?? "" : "",
-      /Rows include source/
+      /Rows include document_id, source/
     );
     assert.match(
       listTool && listTool.type === "function" ? listTool.function.description ?? "" : "",
@@ -528,7 +540,7 @@ describe("Ask date-range tools", () => {
         JSON.stringify({
           count: 2,
           documents: [
-            { key: "RD-28", title: "A", assignee: null, status: "To Do", duedate: "2026-08-01" },
+            { key: "RD-28", document_id: "jira-rd-28", title: "A", assignee: null, status: "To Do", duedate: "2026-08-01" },
           ],
           truncated: false,
         }),
@@ -542,10 +554,11 @@ describe("Ask date-range tools", () => {
         sort_by: "created_asc",
       });
       const payload = JSON.parse(result.result) as {
-        documents: Array<{ key: string; assignee: string | null }>;
+        documents: Array<{ key: string; assignee: string | null; document_id?: string | null }>;
       };
       assert.equal(payload.documents[0]?.key, "RD-28");
       assert.equal(payload.documents[0]?.assignee, null);
+      assert.equal(payload.documents[0]?.document_id, "jira-rd-28");
     } finally {
       globalThis.fetch = originalFetch;
       if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;
@@ -585,7 +598,7 @@ describe("Ask date-range tools", () => {
       const payload = JSON.parse(result.result) as {
         sample: boolean;
         empty: boolean;
-        documents: Array<{ title: string; link: string | null; blurb: string | null }>;
+        documents: Array<{ title: string; link: string | null; blurb: string | null; document_id?: string | null }>;
         hint?: string;
         content_trust?: string;
       };
@@ -594,6 +607,7 @@ describe("Ask date-range tools", () => {
       assert.equal(payload.documents[0]?.title, "hello");
       assert.equal(payload.documents[0]?.link, "https://releasedesk.slack.com/archives/C123/p1");
       assert.equal(payload.documents[0]?.blurb, "matched reply text");
+      assert.equal(payload.documents[0]?.document_id, "slack-1");
       assert.match(payload.hint ?? "", /neighbors/);
       assert.equal(payload.content_trust, "untrusted");
       assert.equal((sent as { retrieval?: string }).retrieval, "hybrid");
@@ -633,6 +647,200 @@ describe("Ask date-range tools", () => {
       assert.match(payload.hint ?? "", /not in the index/);
       assert.equal(payload.content_trust, "untrusted");
       assert.equal(/couldn't retrieve/i.test(payload.hint ?? ""), false);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;
+      else process.env.STAFFLESS_AI_PAT = originalPat;
+      if (originalUrl === undefined) delete process.env.STAFFLESS_AI_URL;
+      else process.env.STAFFLESS_AI_URL = originalUrl;
+    }
+  });
+
+  it("fetches indexed body by document_id", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalPat = process.env.STAFFLESS_AI_PAT;
+    const originalUrl = process.env.STAFFLESS_AI_URL;
+    process.env.STAFFLESS_AI_PAT = "test-pat";
+    process.env.STAFFLESS_AI_URL = "http://staffless.test";
+    const paths: string[] = [];
+    globalThis.fetch = (async (url: unknown) => {
+      paths.push(String(url));
+      return new Response(
+        JSON.stringify({
+          found: true,
+          document_id: "slack-1",
+          source: "slack",
+          title: "hello",
+          link: "https://releasedesk.slack.com/archives/C123/p1",
+          content: "parent: shipping Friday\nreply: delayed to Monday",
+          truncated: false,
+          content_chars: 48,
+          cap_chars: ASK_DOCUMENT_CONTENT_CHAR_CAP,
+          chunk_count: 2,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }) as typeof fetch;
+    try {
+      const extra = await dispatchAskTool(ASK_TOOL_DOCUMENT_CONTENT, {
+        document_id: "slack-1",
+        extra: true,
+      });
+      assert.match(extra.result, /invalid_args/);
+      const empty = await dispatchAskTool(ASK_TOOL_DOCUMENT_CONTENT, { document_id: "" });
+      assert.match(empty.result, /invalid_args/);
+      const blocked = await dispatchAskTool(
+        ASK_TOOL_DOCUMENT_CONTENT,
+        { document_id: "slack-1", source: "confluence" },
+        { sources: [{ id: "slack", label: "Slack", docsIndexed: 2 }] }
+      );
+      assert.match(blocked.result, /unknown_source/);
+      const result = await dispatchAskTool(ASK_TOOL_DOCUMENT_CONTENT, {
+        document_id: "slack-1",
+        source: "slack",
+      });
+      const payload = JSON.parse(result.result) as {
+        found: boolean;
+        document_id: string;
+        content: string;
+        truncated: boolean;
+        content_trust: string;
+      };
+      assert.equal(payload.found, true);
+      assert.equal(payload.document_id, "slack-1");
+      assert.equal(payload.content, "parent: shipping Friday\nreply: delayed to Monday");
+      assert.equal(payload.truncated, false);
+      assert.equal(payload.content_trust, "untrusted");
+      assert.equal(
+        paths.some((path) => path.includes(STAFFLESS_DOCUMENT_CONTENT_PATH.replace("/api", ""))),
+        true
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;
+      else process.env.STAFFLESS_AI_PAT = originalPat;
+      if (originalUrl === undefined) delete process.env.STAFFLESS_AI_URL;
+      else process.env.STAFFLESS_AI_URL = originalUrl;
+    }
+  });
+
+  it("caps oversize body text and reports truncated", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalPat = process.env.STAFFLESS_AI_PAT;
+    const originalUrl = process.env.STAFFLESS_AI_URL;
+    process.env.STAFFLESS_AI_PAT = "test-pat";
+    process.env.STAFFLESS_AI_URL = "http://staffless.test";
+    const oversized = "a".repeat(ASK_DOCUMENT_CONTENT_CHAR_CAP + 40);
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          found: true,
+          document_id: "confluence-1",
+          source: "confluence",
+          content: oversized,
+          truncated: false,
+          chunk_count: 1,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )) as typeof fetch;
+    try {
+      const result = await dispatchAskTool(ASK_TOOL_DOCUMENT_CONTENT, { document_id: "confluence-1" });
+      const payload = JSON.parse(result.result) as {
+        found: boolean;
+        content: string;
+        truncated: boolean;
+        content_chars: number;
+        cap_chars: number;
+        hint?: string;
+      };
+      assert.equal(payload.found, true);
+      assert.equal(payload.truncated, true);
+      assert.equal(payload.content.length, ASK_DOCUMENT_CONTENT_CHAR_CAP);
+      assert.equal(payload.content_chars, ASK_DOCUMENT_CONTENT_CHAR_CAP);
+      assert.equal(payload.cap_chars, ASK_DOCUMENT_CONTENT_CHAR_CAP);
+      assert.match(payload.hint ?? "", /truncated at cap/);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;
+      else process.env.STAFFLESS_AI_PAT = originalPat;
+      if (originalUrl === undefined) delete process.env.STAFFLESS_AI_URL;
+      else process.env.STAFFLESS_AI_URL = originalUrl;
+    }
+  });
+
+  it("treats a missing document as not found", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalPat = process.env.STAFFLESS_AI_PAT;
+    const originalUrl = process.env.STAFFLESS_AI_URL;
+    process.env.STAFFLESS_AI_PAT = "test-pat";
+    process.env.STAFFLESS_AI_URL = "http://staffless.test";
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({ found: false, document_id: "missing", hint: "secret stack" }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )) as typeof fetch;
+    try {
+      const result = await dispatchAskTool(ASK_TOOL_DOCUMENT_CONTENT, { document_id: "missing" });
+      const payload = JSON.parse(result.result) as {
+        found: boolean;
+        document_id: string;
+        hint: string;
+        content?: string;
+      };
+      assert.equal(payload.found, false);
+      assert.equal(payload.document_id, "missing");
+      assert.equal(payload.content, undefined);
+      assert.match(payload.hint, /not readable in this tenant/);
+      assert.equal(/secret stack/.test(payload.hint), false);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;
+      else process.env.STAFFLESS_AI_PAT = originalPat;
+      if (originalUrl === undefined) delete process.env.STAFFLESS_AI_URL;
+      else process.env.STAFFLESS_AI_URL = originalUrl;
+    }
+  });
+
+  it("rejects a fourth get_document_content call in the same turn without fetching", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalPat = process.env.STAFFLESS_AI_PAT;
+    const originalUrl = process.env.STAFFLESS_AI_URL;
+    process.env.STAFFLESS_AI_PAT = "test-pat";
+    process.env.STAFFLESS_AI_URL = "http://staffless.test";
+    let fetches = 0;
+    globalThis.fetch = (async () => {
+      fetches += 1;
+      return new Response(
+        JSON.stringify({
+          found: true,
+          document_id: `doc-${fetches}`,
+          content: "ok",
+          truncated: false,
+          chunk_count: 1,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }) as typeof fetch;
+    try {
+      assert.equal(ASK_MAX_DOCUMENT_CONTENT_PER_TURN, 3);
+      const turn = { documentContentCalls: 0 };
+      for (let i = 0; i < 3; i += 1) {
+        const result = await dispatchAskToolForTurn(
+          ASK_TOOL_DOCUMENT_CONTENT,
+          { document_id: `doc-${i}` },
+          turn
+        );
+        assert.equal(JSON.parse(result.result).found, true);
+      }
+      const fourth = await dispatchAskToolForTurn(
+        ASK_TOOL_DOCUMENT_CONTENT,
+        { document_id: "doc-4" },
+        turn
+      );
+      assert.match(fourth.result, /limit_exceeded/);
+      assert.equal(JSON.parse(fourth.result).found, undefined);
+      assert.equal(fetches, 3);
+      assert.equal(turn.documentContentCalls, 3);
     } finally {
       globalThis.fetch = originalFetch;
       if (originalPat === undefined) delete process.env.STAFFLESS_AI_PAT;

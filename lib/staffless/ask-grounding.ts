@@ -12,6 +12,7 @@ import {
   ASK_TOOL_LIST_MATCHING,
   ASK_TOOL_QUERYABLE_FIELDS,
   ASK_TOOL_SEARCH_INDEX,
+  ASK_TOOL_DOCUMENT_CONTENT,
 } from "@/lib/staffless/ask-tools";
 
 export type AskGrounding = "verified" | "search" | "mixed";
@@ -32,7 +33,8 @@ const VERIFIED_TOOLS = new Set([
  */
 export function askGroundingFromTools(tools: readonly string[]): AskGrounding | null {
   const verified = tools.some((name) => VERIFIED_TOOLS.has(name));
-  const search = tools.includes(ASK_TOOL_SEARCH_INDEX);
+  const search =
+    tools.includes(ASK_TOOL_SEARCH_INDEX) || tools.includes(ASK_TOOL_DOCUMENT_CONTENT);
   if (verified && search) return "mixed";
   if (verified) return "verified";
   if (search) return "search";
