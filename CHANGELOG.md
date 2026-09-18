@@ -12,6 +12,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Ask Slack thread vs Jira key:** `search_indexed_documents` must not treat a Slack thread token as a Jira ticket key (`get_document_by_key` stays PROJECT-NUMBER only). Empty search on Slack retries search, not `channel=<token>`. Auth unchanged.
+
 - **Ask Slack thread vs channel:** `ASK_AGENT_SYSTEM` treats `filter_field=channel` as a stored Slack channel tag only (discover with `list_distinct_values`). A thread token is message text: `search_indexed_documents` then `get_document_content`. Genuine channel questions still use `channel=<stored name>`. Auth unchanged.
 
 - **Ask document body quota/prompt:** `get_document_content` quota no longer increments on `invalid_args` (a bad `document_id` does not burn one of the 3 per-turn fetches). `ASK_AGENT_SYSTEM` lists `document_id` on `list_documents_matching` rows and tells the model not to use body-fetch for search, counts, source lists, or parent/child lookups. Auth unchanged.
