@@ -193,7 +193,7 @@ function distinctNote(field: string): string {
     return "Each value is a repository owner/name. Repository count is the number of values, not total_indexed (that is document count).";
   }
   if (field === "object_type") {
-    return "GitHub stores PullRequest, Issue, Repository, Readme, Commit, and File here when those types are indexed. Filter by object_type; unfiltered GitHub count is not a repository census.";
+    return "These are the stored object_type values on this source. An unfiltered source count is every document, not one object type.";
   }
   return "Exact distinct indexed tag values, not a search sample.";
 }

@@ -8,9 +8,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Ask historical eval:** `scripts/ask-eval` runs the live Ask tool loop (`gpt-4o`, temperature 0.2) against a closed set of past failures, 5 times each, with tool traces. Infra failures are scored separately from model fails. Missing/empty sources skip. A six-principles candidate prompt lives in the harness only until it matches baseline. Auth unchanged (`readonly` Ask, engine admin PAT). No tokens in output.
+
 - **Ask document body:** `get_document_content` reads one indexed document by OpenSearch `document_id` (from search/list rows). Extra title/link keys are ignored. Search rows expose that OpenSearch id (not a Slack title prefix like `admin in #social`). Engine `POST /admin/document-content` uses the same tenant + ACL filters as admin search; ACL miss or a 4xx is `found: false`. A 5xx does not pivot to counts. Body is capped at 16 chunks / 24k chars with an explicit `truncated` flag. Max 3 fetches per Ask turn. Body text is not logged. Auth unchanged (`readonly` Ask, engine admin PAT).
 
 ### Changed
+
+- **Ask six principles + tool facts:** Production `ASK_AGENT_SYSTEM` no longer carries Slack/GitHub/Resolved cookbooks. Universal principles stay in the system prompt; companion-field, document-vs-distinct, key-vs-content, and thread search→body facts live on tool descriptions with short examples and corrective hints. Auth and PII handling are unchanged. BN-378.
 
 - **Ask Slack thread vs Jira key:** `search_indexed_documents` must not treat a Slack thread token as a Jira ticket key (`get_document_by_key` stays PROJECT-NUMBER only). Empty search on Slack retries search, not `channel=<token>`. Auth unchanged.
 

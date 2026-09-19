@@ -66,3 +66,4 @@ overview.json
 
 # Ask vs StaffLess benchmark output (may contain ticket titles)
 /scripts/ask-benchmark-output/
+/scripts/ask-eval-output/

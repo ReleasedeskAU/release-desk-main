@@ -149,16 +149,6 @@ export async function getVerifiedCount(args: VerifiedCountArgs): Promise<Verifie
     filter_field: typeof result?.filter_field === "string" ? result.filter_field : null,
     filter_value: typeof result?.filter_value === "string" ? result.filter_value : null,
     matched_values: matched,
-    note: githubCountNote(
-      typeof result?.source === "string" ? result.source : undefined,
-      args.source,
-      "Exact unique indexed document count, not a search sample."
-    ),
+    note: "Exact unique indexed document count, not a search sample.",
   };
-}
-
-/** GitHub source totals are every indexed GitHub document, never a live repo census. */
-function githubCountNote(source: string | undefined, requested: string | undefined, base: string): string {
-  if (source !== "github" && requested !== "github") return base;
-  return `${base} GitHub count is unique indexed documents (pull requests, issues, repository overviews, READMEs, commits, files if enabled), not repositories. Repository count is how many distinct repo values exist. PR counts use object_type=PullRequest plus state=open, merged=true, or state=closed AND merged=false. Commit counts use object_type=Commit.`;
 }

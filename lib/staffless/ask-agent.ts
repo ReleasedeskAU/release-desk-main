@@ -8,7 +8,7 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
 import { randomUUID } from "node:crypto";
 import { ASK_AGENT_SYSTEM, ASK_PUBLIC_UNAVAILABLE } from "@/lib/staffless/ask-copy";
 import { listStafflessConnectors } from "@/lib/staffless/api";
-import { formatAskSourceInventory, uniqueAskSources, type AskIndexedSource } from "@/lib/staffless/ask-source";
+import { formatAskSourceInventory, uniqueAskSources, type AskIndexedSource, type AskSourceContext } from "@/lib/staffless/ask-source";
 import {
   formatDocumentByKeyAnswer,
   parseDocumentByKeyResult,
@@ -16,7 +16,13 @@ import {
 } from "@/lib/staffless/ask-format";
 import { askGroundingFromTools } from "@/lib/staffless/ask-grounding";
 import type { DocumentByKeyResult } from "@/lib/staffless/ask-catalog";
-import { ASK_TOOL_DOCUMENT_BY_KEY, dispatchAskToolForTurn, type AskTurnLimits, buildAskTools } from "@/lib/staffless/ask-tools";
+import {
+  ASK_TOOL_DOCUMENT_BY_KEY,
+  dispatchAskToolForTurn,
+  type AskToolDispatch,
+  type AskTurnLimits,
+  buildAskTools,
+} from "@/lib/staffless/ask-tools";
 import { sourcesToAttachFromTool, type AskEvent, type AskSource } from "@/lib/staffless/ask-packets";
 import { logger } from "@/lib/logger";
 
@@ -24,6 +30,38 @@ export const ASK_MAX_TOOL_ROUNDS = 8;
 export const ASK_OPENAI_MAX_RETRIES = 3;
 
 export type AskHistoryTurn = { role: "user" | "assistant"; content: string };
+
+/** One tool invocation from the Ask loop, in call order. */
+export type AskToolTraceCall = {
+  round: number;
+  name: string;
+  arguments: unknown;
+  result: string;
+};
+
+/** Result of one Ask tool loop, including traces for eval. */
+export type AskToolLoopResult = {
+  text: string;
+  tools: string[];
+  sources: AskSource[];
+  calls: AskToolTraceCall[];
+};
+
+/**
+ * Optional override for StaffLess dispatch. Production leaves this unset.
+ * @param name - Tool function name.
+ * @param rawArgs - Parsed tool arguments.
+ * @param turn - Per-turn limits.
+ * @param context - Indexed sources for this turn.
+ * @param userQuestion - Current user question, when the tool needs it.
+ */
+export type AskToolDispatcher = (
+  name: string,
+  rawArgs: unknown,
+  turn: AskTurnLimits,
+  context?: AskSourceContext,
+  userQuestion?: string
+) => Promise<AskToolDispatch>;
 
 /**
  * Run the Ask agent and yield the same AskEvent stream the UI already consumes.
@@ -93,18 +131,32 @@ async function loadAskIndexedSources(): Promise<AskIndexedSource[]> {
   }
 }
 
+/**
+ * Run the Ask tool loop. Extra `calls` traces are for eval; production ignores them.
+ * @param openai - OpenAI client (gpt-4o, temperature 0.2).
+ * @param messages - System + history + current user question.
+ * @param opts - Ticket-table flag, sources, question, optional dispatch override.
+ * @returns Final text, tool names, source chips, and per-call traces.
+ */
 export async function completeAskWithTools(
   openai: OpenAI,
   messages: ChatCompletionMessageParam[],
-  opts?: { allowTicketTable?: boolean; indexedSources?: AskIndexedSource[]; userQuestion?: string }
-): Promise<{ text: string; tools: string[]; sources: AskSource[] }> {
+  opts?: {
+    allowTicketTable?: boolean;
+    indexedSources?: AskIndexedSource[];
+    userQuestion?: string;
+    dispatchTool?: AskToolDispatcher;
+  }
+): Promise<AskToolLoopResult> {
   const allowTicketTable = opts?.allowTicketTable ?? true;
   const indexedSources = opts?.indexedSources ?? [];
+  const dispatchTool = opts?.dispatchTool ?? dispatchAskToolForTurn;
   const toolDefs = buildAskTools(indexedSources.map((item) => item.id));
   const sourceContext = { sources: indexedSources };
   const tools: string[] = [];
   const sources: AskSource[] = [];
   const seenSource = new Set<string>();
+  const recorded: AskToolTraceCall[] = [];
   const turn: AskTurnLimits = { documentContentCalls: 0 };
   let lastDocument: DocumentByKeyResult | null = null;
   for (let round = 0; round < ASK_MAX_TOOL_ROUNDS; round += 1) {
@@ -117,13 +169,14 @@ export async function completeAskWithTools(
       max_tokens: 1600,
     });
     const choice = res.choices[0]?.message;
-    if (!choice) return { text: "", tools, sources };
+    if (!choice) return { text: "", tools, sources, calls: recorded };
     const calls = choice.tool_calls ?? [];
     if (calls.length === 0) {
       return {
         text: finalAskText(tools, lastDocument, choice.content, allowTicketTable),
         tools,
         sources,
+        calls: recorded,
       };
     }
 
@@ -137,13 +190,19 @@ export async function completeAskWithTools(
       } catch {
         raw = {};
       }
-      const dispatched = await dispatchAskToolForTurn(
+      const dispatched = await dispatchTool(
         call.function.name,
         raw,
         turn,
         sourceContext,
         opts?.userQuestion
       );
+      recorded.push({
+        round: round + 1,
+        name: call.function.name,
+        arguments: raw,
+        result: dispatched.result,
+      });
       if (call.function.name === ASK_TOOL_DOCUMENT_BY_KEY) {
         lastDocument = parseDocumentByKeyResult(dispatched.result);
       }
@@ -160,7 +219,7 @@ export async function completeAskWithTools(
       });
     }
   }
-  return { text: "", tools, sources };
+  return { text: "", tools, sources, calls: recorded };
 }
 
 /**
