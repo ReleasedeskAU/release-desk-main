@@ -51,6 +51,11 @@ describe("Ask catalog tools", () => {
     assert.match(byName[ASK_TOOL_GET_VERIFIED_COUNT] ?? "", /distinct repo values/);
     assert.match(byName[ASK_TOOL_BREAKDOWN] ?? "", /grouped by one field/);
     assert.match(byName[ASK_TOOL_DISTINCT] ?? "", /stored values/);
+    assert.match(byName[ASK_TOOL_DISTINCT] ?? "", /author, channel/);
+    assert.match(byName[ASK_TOOL_LIST_MATCHING] ?? "", /has no time order/);
+    assert.match(byName[ASK_TOOL_LIST_MATCHING] ?? "", /sort_by=updated_desc/);
+    assert.match(byName[ASK_TOOL_SEARCH_INDEX] ?? "", /no time order/);
+    assert.match(byName[ASK_TOOL_SEARCH_INDEX] ?? "", /latest \/ most recent/);
     assert.match(byName[ASK_TOOL_DOCUMENT_BY_KEY] ?? "", /exact lookup/i);
     assert.match(byName[ASK_TOOL_DOCUMENT_BY_KEY] ?? "", /message, thread, alert/);
     assert.match(byName[ASK_TOOL_LIST_MATCHING] ?? "", /omit extra filters/);
@@ -161,7 +166,15 @@ describe("Ask catalog tools", () => {
     assert.match(ASK_AGENT_SYSTEM, /quote description\/comments\/replies/);
     assert.match(ASK_AGENT_SYSTEM, /short summary of that same body/);
     assert.match(ASK_AGENT_SYSTEM, /parent\/child lookup/);
+    assert.match(ASK_AGENT_SYSTEM, /Not latest\/most recent\/newest/);
+    assert.match(ASK_AGENT_SYSTEM, /How answers are written/);
+    assert.match(ASK_AGENT_SYSTEM, /never blend into one unattributed claim/);
+    assert.match(ASK_AGENT_SYSTEM, /Write natural prose by default/);
+    assert.match(ASK_AGENT_SYSTEM, /ask a follow-up in this same answer/);
     assert.match(ASK_AGENT_SYSTEM, /Field\|Value/);
+    assert.equal(/A first-turn "what is <key>\?" identity lookup may use/.test(ASK_AGENT_SYSTEM), false);
+    assert.match(ASK_AGENT_SYSTEM, /From index chip/);
+    assert.equal(/A Verified badge means/.test(ASK_AGENT_SYSTEM), false);
     assert.match(ASK_AGENT_SYSTEM, /resolved_status_category/);
     assert.match(ASK_AGENT_SYSTEM, /status_category/);
     assert.equal(/resolved_statuses/.test(ASK_AGENT_SYSTEM), false);

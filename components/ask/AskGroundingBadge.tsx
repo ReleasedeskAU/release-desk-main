@@ -1,19 +1,35 @@
 import { StatusBadge } from "@/components/badges/StatusBadge";
-import { ASK_GROUNDING_SEARCH } from "@/lib/staffless/ask-copy";
+import { ASK_GROUNDING_INDEX, ASK_GROUNDING_INDEX_HINT, ASK_GROUNDING_SEARCH } from "@/lib/staffless/ask-copy";
 import type { AskGrounding } from "@/lib/staffless/ask-grounding";
+import { statusTokens } from "@/lib/palette";
 import { cn } from "@/lib/utils";
 
 /**
- * Subtle trust chip for an Ask answer. Reuses StatusBadge for Verified.
- * Search uses the same gray token as Draft / N/A so contrast matches the system.
+ * Subtle trust chip for an Ask answer. Catalog lookups are "From index", not live-system truth.
  */
 export function AskGroundingBadge({ kind }: { kind: AskGrounding }) {
-  if (kind === "verified") return <StatusBadge status="Verified" />;
+  if (kind === "verified") return <IndexChip />;
   if (kind === "search") return <SearchChip />;
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
-      <StatusBadge status="Verified" />
+      <IndexChip />
       <SearchChip />
+    </span>
+  );
+}
+
+function IndexChip() {
+  const token = statusTokens.Verified;
+  return (
+    <span
+      title={ASK_GROUNDING_INDEX_HINT}
+      className={cn(
+        "inline-flex items-center rounded-full px-2.5 py-0.5 text-theme-xs font-medium",
+        token.bg,
+        token.text
+      )}
+    >
+      {ASK_GROUNDING_INDEX}
     </span>
   );
 }

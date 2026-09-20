@@ -5,7 +5,7 @@
 
 import { ASK_ADDITIONAL_CONTEXT, ASK_PUBLIC_UNAVAILABLE } from "@/lib/staffless/ask-copy";
 import type { AskGrounding } from "@/lib/staffless/ask-grounding";
-import { ASK_TOOL_SEARCH_INDEX } from "@/lib/staffless/ask-tools";
+import { ASK_TOOL_LIST_MATCHING, ASK_TOOL_DOCUMENT_BY_KEY, ASK_TOOL_SEARCH_INDEX } from "@/lib/staffless/ask-tools";
 
 /** Live StaffLess chat endpoints (nginx `/api` prefix). */
 export const STAFFLESS_CREATE_SESSION_PATH = "/api/chat/create-chat-session";
@@ -140,15 +140,13 @@ function mapDoc(item: unknown): AskSource | null {
     (typeof doc.semantic_identifier === "string" && doc.semantic_identifier) ||
     "";
   if (!id) return null;
-  const title =
-    (typeof doc.semantic_identifier === "string" && doc.semantic_identifier.trim()) ||
-    id;
-  return {
-    id,
-    title,
-    url: safeHttpUrl(doc.link),
-    source: sourceLabel(typeof doc.source_type === "string" ? doc.source_type : ""),
-  };
+  const source = sourceLabel(typeof doc.source_type === "string" ? doc.source_type : "");
+  const title = askSourceDisplayTitle(
+    typeof doc.semantic_identifier === "string" ? doc.semantic_identifier : "",
+    "",
+    source
+  );
+  return { id, title, url: safeHttpUrl(doc.link), source };
 }
 
 /**
@@ -173,6 +171,28 @@ function sourceLabel(sourceType: string): string {
   return sourceType.replace(/_/g, " ");
 }
 
+const GENERIC_TITLE = /^(about\s+)?unknown subject$/i;
+
+/** Max source chips shown under an Ask answer. */
+export const ASK_SOURCE_CHIP_CAP = 3;
+
+/**
+ * Chip title from stored fields. Empty or "Unknown Subject" is not shown as-is.
+ * @param title - Indexed title when present.
+ * @param key - Stored document key when present.
+ * @param source - Display source label.
+ */
+export function askSourceDisplayTitle(title: string, key: string, source: string): string {
+  const trimmedTitle = title.trim();
+  const trimmedKey = key.trim();
+  const trimmedSource = source.trim();
+  if (trimmedTitle && !GENERIC_TITLE.test(trimmedTitle)) return trimmedTitle;
+  if (trimmedSource && trimmedKey) return `${trimmedSource} · ${trimmedKey}`;
+  if (trimmedKey) return trimmedKey;
+  if (/teams/i.test(trimmedSource)) return "Teams conversation";
+  return trimmedSource || "Indexed";
+}
+
 function sourceFromToolDoc(item: unknown): AskSource | null {
   if (!item || typeof item !== "object") return null;
   const doc = item as Record<string, unknown>;
@@ -180,15 +200,14 @@ function sourceFromToolDoc(item: unknown): AskSource | null {
   if (!url) return null;
   // Permalink/browse URL is the record identity. Slack catalog keys are often the
   // shared channel label ("Unknown in #social"), which is not unique per message.
-  const title =
-    (typeof doc.title === "string" && doc.title.trim()) ||
-    (typeof doc.key === "string" && doc.key.trim()) ||
-    url;
   const sourceRaw =
     (typeof doc.source === "string" && doc.source) ||
     (typeof doc.source_type === "string" && doc.source_type) ||
     "";
-  return { id: url, title, url, source: sourceLabel(sourceRaw) };
+  const source = sourceLabel(sourceRaw);
+  const key = typeof doc.key === "string" ? doc.key : "";
+  const rawTitle = typeof doc.title === "string" ? doc.title : "";
+  return { id: url, title: askSourceDisplayTitle(rawTitle, key, source), url, source };
 }
 
 /**
@@ -225,6 +244,58 @@ export function sourcesFromAskToolResult(raw: string): AskSource[] {
 export function sourcesToAttachFromTool(toolName: string, raw: string): AskSource[] {
   if (toolName === ASK_TOOL_SEARCH_INDEX) return [];
   return sourcesFromAskToolResult(raw);
+}
+
+export type AskSourceBatch = { tool: string; sources: AskSource[] };
+
+/**
+ * Cap chips at 3. Prefer URLs cited in the answer; else the latest catalog list's first rows.
+ * @param text - Final assistant markdown.
+ * @param batches - Sources collected per tool call, in call order.
+ */
+export function selectAskSourceChips(text: string, batches: readonly AskSourceBatch[]): AskSource[] {
+  const cited = citedSourcesFromText(text, batches);
+  if (cited.length > 0) return cited.slice(0, ASK_SOURCE_CHIP_CAP);
+  const listed = lastBatchSources(batches, ASK_TOOL_LIST_MATCHING);
+  if (listed.length > 0) return listed.slice(0, ASK_SOURCE_CHIP_CAP);
+  return lastBatchSources(batches, ASK_TOOL_DOCUMENT_BY_KEY).slice(0, ASK_SOURCE_CHIP_CAP);
+}
+
+function citedSourcesFromText(text: string, batches: readonly AskSourceBatch[]): AskSource[] {
+  const byUrl = new Map<string, AskSource>();
+  for (const batch of batches) {
+    for (const source of batch.sources) {
+      if (source.url) byUrl.set(source.url, source);
+    }
+  }
+  const out: AskSource[] = [];
+  const seen = new Set<string>();
+  for (const url of urlsInMarkdown(text)) {
+    const source = byUrl.get(url);
+    if (!source || seen.has(url)) continue;
+    seen.add(url);
+    out.push(source);
+  }
+  return out;
+}
+
+function lastBatchSources(batches: readonly AskSourceBatch[], tool: string): AskSource[] {
+  for (let i = batches.length - 1; i >= 0; i -= 1) {
+    const batch = batches[i];
+    if (batch && batch.tool === tool && batch.sources.length > 0) return batch.sources;
+  }
+  return [];
+}
+
+function urlsInMarkdown(text: string): string[] {
+  const out: string[] = [];
+  const re = /https?:\/\/[^\s)\]>"']+/gi;
+  let match: RegExpExecArray | null = re.exec(text);
+  while (match) {
+    out.push(match[0].replace(/[.,;]+$/, ""));
+    match = re.exec(text);
+  }
+  return out;
 }
 
 /**

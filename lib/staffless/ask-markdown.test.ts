@@ -100,6 +100,48 @@ describe("parseAskMarkdown prose", () => {
     assert.equal(list.items[2]?.text, "**BN-20: Shared connector testing**");
   });
 
+  it("keeps GitHub 1. commit records as one list when View commit is a lone link", () => {
+    const blocks = parseAskMarkdown(
+      [
+        "Here are some of the commit messages from ReleasedeskAU/website-test:",
+        "",
+        '1. Commit: "website-test added initial README.md for website-test project"',
+        "",
+        "[View commit](https://github.com/ReleasedeskAU/website-test/commit/aaa)",
+        "",
+        '1. Commit: "website-test Add Release Desk marketing site"',
+        "",
+        "[View commit](https://github.com/ReleasedeskAU/website-test/commit/bbb)",
+        "",
+        '1. Commit: "website-test Merge pull request #1"',
+        "",
+        "[View commit](https://github.com/ReleasedeskAU/website-test/commit/ccc)",
+      ].join("\n")
+    );
+    const lists = blocks.filter((b) => b.type === "list");
+    assert.equal(lists.length, 1);
+    const list = lists[0];
+    if (list?.type !== "list") throw new Error("expected ordered list");
+    assert.equal(list.ordered, true);
+    assert.equal(list.items.length, 3);
+    assert.match(list.items[0]?.text ?? "", /initial README/);
+    assert.deepEqual(list.items[0]?.nested, [
+      "[View commit](https://github.com/ReleasedeskAU/website-test/commit/aaa)",
+    ]);
+    assert.match(list.items[1]?.text ?? "", /marketing site/);
+    assert.match(list.items[2]?.text ?? "", /Merge pull request/);
+  });
+
+  it("does not glue two 1. lists across a prose sentence", () => {
+    const blocks = parseAskMarkdown(
+      "1. First record\n\nThose were last week's commits.\n\n1. Unrelated later record"
+    );
+    const lists = blocks.filter((b) => b.type === "list" && b.ordered);
+    assert.equal(lists.length, 2);
+    assert.equal(lists[0]?.type === "list" && lists[0].items.length, 1);
+    assert.equal(lists[1]?.type === "list" && lists[1].items.length, 1);
+  });
+
   it("starts numbering over after a heading between two lists", () => {
     const blocks = parseAskMarkdown("## Open\n\n1. BN-1\n\n## Closed\n\n1. BN-2");
     const lists = blocks.filter((b) => b.type === "list" && b.ordered);

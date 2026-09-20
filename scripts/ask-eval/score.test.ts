@@ -180,4 +180,50 @@ describe("scoreAskEvalTurn", () => {
     );
     assert.equal(exactEmpty.outcome, "pass");
   });
+
+  it("fails LATEST_MESSAGE when search is used", () => {
+    const scored = scoreAskEvalTurn("LATEST_MESSAGE", "admin said hi in social.", [
+      call("search_indexed_documents", { query: "latest message from admin" }),
+    ]);
+    assert.equal(scored.outcome, "fail");
+    assert.equal(scored.reason, "used_search");
+  });
+
+  it("fails LATEST_MESSAGE when the list is not date-desc sorted", () => {
+    const scored = scoreAskEvalTurn("LATEST_MESSAGE", "admin said hi.", [
+      call("list_documents_matching", {
+        source: "slack",
+        filter_field: "channel",
+        filter_value: "social",
+        filters: [{ filter_field: "author", filter_value: "admin" }],
+      }),
+    ]);
+    assert.equal(scored.outcome, "fail");
+    assert.equal(scored.reason, "no_date_desc_list");
+  });
+
+  it("passes LATEST_MESSAGE when a date-desc list first row is cited", () => {
+    const scored = scoreAskEvalTurn(
+      "LATEST_MESSAGE",
+      "The latest post is admin in #social: TESTFACT-A2 webhook.",
+      [
+        call(
+          "list_documents_matching",
+          {
+            source: "slack",
+            filters: [
+              { filter_field: "channel", filter_value: "social" },
+              { filter_field: "author", filter_value: "admin" },
+            ],
+            sort_by: "updated_desc",
+          },
+          JSON.stringify({
+            documents: [{ title: "admin in #social: TESTFACT-A2 webhook", document_id: "slack-doc-1" }],
+          })
+        ),
+      ]
+    );
+    assert.equal(scored.outcome, "pass");
+    assert.equal(scored.reason, "list_date_desc");
+  });
 });

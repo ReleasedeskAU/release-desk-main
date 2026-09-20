@@ -9,6 +9,8 @@ import {
   mapStafflessPacket,
   mergeAskSources,
   safeHttpUrl,
+  selectAskSourceChips,
+  askSourceDisplayTitle,
   sourcesFromAskToolResult,
   sourcesToAttachFromTool,
   STAFFLESS_CREATE_SESSION_PATH,
@@ -192,6 +194,51 @@ describe("applyCitation / safeHttpUrl", () => {
     assert.equal(sources.length, 2);
     assert.equal(sources[0]?.id, "https://releasedesk.slack.com/archives/C123/p111");
     assert.equal(sources[1]?.id, "https://releasedesk.slack.com/archives/C123/p222");
+  });
+
+  it("caps chips at 3, prefers cited URLs, else the latest list's first rows", () => {
+    const docs = [1, 2, 3, 4].map((n) => ({
+      title: `post ${n}`,
+      source: "slack",
+      link: `https://example.com/p${n}`,
+    }));
+    const batch = {
+      tool: "list_documents_matching",
+      sources: sourcesFromAskToolResult(JSON.stringify({ documents: docs })),
+    };
+    const fallback = selectAskSourceChips("no links here", [batch]);
+    assert.equal(fallback.length, 3);
+    assert.equal(fallback[0]?.url, "https://example.com/p1");
+    assert.equal(fallback[2]?.url, "https://example.com/p3");
+    const cited = selectAskSourceChips(
+      "See [one](https://example.com/p4) and [two](https://example.com/p2).",
+      [batch]
+    );
+    assert.equal(cited.length, 2);
+    assert.equal(cited[0]?.url, "https://example.com/p4");
+    assert.equal(cited[1]?.url, "https://example.com/p2");
+  });
+
+  it("replaces empty and Unknown Subject chip titles", () => {
+    assert.equal(
+      askSourceDisplayTitle("about Unknown Subject", "CH1", "Microsoft Teams"),
+      "Microsoft Teams · CH1"
+    );
+    assert.equal(askSourceDisplayTitle("Unknown Subject", "", "Microsoft Teams"), "Teams conversation");
+    assert.equal(askSourceDisplayTitle("hello", "k", "Slack"), "hello");
+    const sources = sourcesFromAskToolResult(
+      JSON.stringify({
+        documents: [
+          {
+            title: "Unknown Subject",
+            source: "teams",
+            link: "https://teams.example/a",
+          },
+        ],
+      })
+    );
+    assert.equal(sources[0]?.title, "Teams conversation");
+    assert.equal(sources[0]?.source, "Microsoft Teams");
   });
 });
 

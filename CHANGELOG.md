@@ -14,6 +14,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Ask answer tone (grounding unchanged):** First-turn `get_document_by_key` no longer replaces the model’s prose with a Field|Value table unless the user asked for fields/a table. Source chips cap at 3 (cited URLs first, else the latest catalog list). Empty/`Unknown Subject` titles become source+key or “Teams conversation”. The catalog chip label is **From index** (same meaning: a catalog tool ran, not a live-system guarantee). Temperature stays 0.2; no general-knowledge fallback. Auth unchanged. BN-378.
+
+- **Ask latest vs search:** `list_documents_matching` treats latest/most recent as `sort_by=created_desc` or `updated_desc` (omit sort is `key_asc`, not newest). `search_indexed_documents` has no time order. `list_distinct_values` is used before author/channel filters. The Ask system-prompt search inventory line excludes latest/most recent; the six principles are unchanged. Auth unchanged. BN-378.
+
 - **Ask six principles + tool facts:** Production `ASK_AGENT_SYSTEM` no longer carries Slack/GitHub/Resolved cookbooks. Universal principles stay in the system prompt; companion-field, document-vs-distinct, key-vs-content, and thread search→body facts live on tool descriptions with short examples and corrective hints. Auth and PII handling are unchanged. BN-378.
 
 - **Ask Slack thread vs Jira key:** `search_indexed_documents` must not treat a Slack thread token as a Jira ticket key (`get_document_by_key` stays PROJECT-NUMBER only). Empty search on Slack retries search, not `channel=<token>`. Auth unchanged.

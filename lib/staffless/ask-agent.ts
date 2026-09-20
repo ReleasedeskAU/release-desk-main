@@ -23,7 +23,7 @@ import {
   type AskTurnLimits,
   buildAskTools,
 } from "@/lib/staffless/ask-tools";
-import { sourcesToAttachFromTool, type AskEvent, type AskSource } from "@/lib/staffless/ask-packets";
+import { sourcesToAttachFromTool, selectAskSourceChips, type AskEvent, type AskSource, type AskSourceBatch } from "@/lib/staffless/ask-packets";
 import { logger } from "@/lib/logger";
 
 export const ASK_MAX_TOOL_ROUNDS = 8;
@@ -99,7 +99,6 @@ export async function* runAskAgent(opts: {
 
   try {
     const { text, tools, sources } = await completeAskWithTools(openai, messages, {
-      allowTicketTable: opts.history.length === 0,
       indexedSources,
       userQuestion: opts.message,
     });
@@ -135,27 +134,25 @@ async function loadAskIndexedSources(): Promise<AskIndexedSource[]> {
  * Run the Ask tool loop. Extra `calls` traces are for eval; production ignores them.
  * @param openai - OpenAI client (gpt-4o, temperature 0.2).
  * @param messages - System + history + current user question.
- * @param opts - Ticket-table flag, sources, question, optional dispatch override.
+ * @param opts - Indexed sources, question, optional dispatch override.
  * @returns Final text, tool names, source chips, and per-call traces.
  */
 export async function completeAskWithTools(
   openai: OpenAI,
   messages: ChatCompletionMessageParam[],
   opts?: {
-    allowTicketTable?: boolean;
     indexedSources?: AskIndexedSource[];
     userQuestion?: string;
     dispatchTool?: AskToolDispatcher;
   }
 ): Promise<AskToolLoopResult> {
-  const allowTicketTable = opts?.allowTicketTable ?? true;
   const indexedSources = opts?.indexedSources ?? [];
   const dispatchTool = opts?.dispatchTool ?? dispatchAskToolForTurn;
+  const question = opts?.userQuestion ?? "";
   const toolDefs = buildAskTools(indexedSources.map((item) => item.id));
   const sourceContext = { sources: indexedSources };
   const tools: string[] = [];
-  const sources: AskSource[] = [];
-  const seenSource = new Set<string>();
+  const batches: AskSourceBatch[] = [];
   const recorded: AskToolTraceCall[] = [];
   const turn: AskTurnLimits = { documentContentCalls: 0 };
   let lastDocument: DocumentByKeyResult | null = null;
@@ -169,13 +166,16 @@ export async function completeAskWithTools(
       max_tokens: 1600,
     });
     const choice = res.choices[0]?.message;
-    if (!choice) return { text: "", tools, sources, calls: recorded };
+    if (!choice) {
+      return { text: "", tools, sources: selectAskSourceChips("", batches), calls: recorded };
+    }
     const calls = choice.tool_calls ?? [];
     if (calls.length === 0) {
+      const text = finalAskText(tools, lastDocument, choice.content, question);
       return {
-        text: finalAskText(tools, lastDocument, choice.content, allowTicketTable),
+        text,
         tools,
-        sources,
+        sources: selectAskSourceChips(text, batches),
         calls: recorded,
       };
     }
@@ -206,12 +206,10 @@ export async function completeAskWithTools(
       if (call.function.name === ASK_TOOL_DOCUMENT_BY_KEY) {
         lastDocument = parseDocumentByKeyResult(dispatched.result);
       }
-      for (const source of sourcesToAttachFromTool(call.function.name, dispatched.result)) {
-        const key = source.url ?? source.id;
-        if (seenSource.has(key)) continue;
-        seenSource.add(key);
-        sources.push(source);
-      }
+      batches.push({
+        tool: call.function.name,
+        sources: sourcesToAttachFromTool(call.function.name, dispatched.result),
+      });
       messages.push({
         role: "tool",
         tool_call_id: call.id,
@@ -219,20 +217,19 @@ export async function completeAskWithTools(
       });
     }
   }
-  return { text: "", tools, sources, calls: recorded };
+  return { text: "", tools, sources: selectAskSourceChips("", batches), calls: recorded };
 }
 
 /**
- * First-turn ticket-only lookups use a Field | Value table from stored fields.
- * Follow-ups and mixed turns keep the model text so summaries and groupings are not dropped.
+ * Force a Field | Value table only when the user asked for fields/a table on a ticket-only turn.
  */
 function finalAskText(
   tools: string[],
   document: DocumentByKeyResult | null,
   content: string | null | undefined,
-  allowTicketTable: boolean
+  question: string
 ): string {
-  if (document && allowTicketTable && shouldFormatTicketTable(tools, true)) {
+  if (document && shouldFormatTicketTable(tools, question)) {
     return formatDocumentByKeyAnswer(document);
   }
   return (content ?? "").trim();

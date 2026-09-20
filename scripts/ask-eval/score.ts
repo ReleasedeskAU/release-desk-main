@@ -46,6 +46,8 @@ export function scoreAskEvalTurn(
       return scoreResolved(text, calls);
     case "MISSING":
       return scoreMissing(text, calls);
+    case "LATEST_MESSAGE":
+      return scoreLatestMessage(text, calls);
     default:
       return { outcome: "fail", reason: "unknown_case" };
   }
@@ -296,4 +298,52 @@ function scoreMissing(text: string, calls: readonly AskToolTraceCall[]): AskEval
   if (missing) return { outcome: "pass", reason: "not_in_index" };
   if (byKey) return { outcome: "fail", reason: "lookup_without_refusal" };
   return { outcome: "fail", reason: "did_not_refuse" };
+}
+
+function scoreLatestMessage(text: string, calls: readonly AskToolTraceCall[]): AskEvalScore {
+  if (calls.some((c) => c.name === "search_indexed_documents")) {
+    return { outcome: "fail", reason: "used_search" };
+  }
+  const listed = latestDateDescList(calls);
+  if (!listed) return { outcome: "fail", reason: "no_date_desc_list" };
+  if (!hasFilter(calls, "channel", "social")) return { outcome: "fail", reason: "no_channel_social" };
+  const author = allFilters(calls).some(
+    (f) => f.field.toLowerCase() === "author" && f.value.toLowerCase().includes("admin")
+  );
+  if (!author) return { outcome: "fail", reason: "no_author_admin" };
+  if (!listed.first) return { outcome: "fail", reason: "empty_list" };
+  if (!answerCitesListRow(text, listed.first)) return { outcome: "fail", reason: "answer_not_first_row" };
+  return { outcome: "pass", reason: "list_date_desc" };
+}
+
+type ListRow = { document_id?: unknown; key?: unknown; title?: unknown; link?: unknown };
+
+function latestDateDescList(
+  calls: readonly AskToolTraceCall[]
+): { first: ListRow | null } | null {
+  let found: { first: ListRow | null } | null = null;
+  for (const call of calls) {
+    if (call.name !== "list_documents_matching") continue;
+    const sortBy = String(asRecord(call.arguments).sort_by ?? "").toLowerCase();
+    if (sortBy !== "created_desc" && sortBy !== "updated_desc") continue;
+    try {
+      const payload = JSON.parse(call.result) as { documents?: ListRow[] };
+      const docs = Array.isArray(payload.documents) ? payload.documents : [];
+      found = { first: docs[0] ?? null };
+    } catch {
+      found = { first: null };
+    }
+  }
+  return found;
+}
+
+function answerCitesListRow(text: string, row: ListRow): boolean {
+  const t = text.toLowerCase();
+  for (const value of [row.document_id, row.link, row.key, row.title]) {
+    if (typeof value !== "string") continue;
+    const needle = value.trim();
+    if (needle.length < 4) continue;
+    if (t.includes(needle.toLowerCase())) return true;
+  }
+  return false;
 }

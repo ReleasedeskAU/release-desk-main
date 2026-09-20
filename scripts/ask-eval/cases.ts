@@ -24,6 +24,11 @@ export const ASK_EVAL_CASES: AskEvalCase[] = [
   { id: "DESC", question: "What is the full description of BN-378?", requiresSource: "jira" },
   { id: "RESOLVED", question: "How many tickets are resolved?", requiresSource: "jira" },
   { id: "MISSING", question: "What is RD-999999 about?", requiresSource: "jira" },
+  {
+    id: "LATEST_MESSAGE",
+    question: "what is the latest message from admin in the social channel",
+    requiresSource: "slack",
+  },
 ];
 
 /**

@@ -18,6 +18,7 @@ describe("ASK_CANDIDATE_SYSTEM", () => {
     assert.equal(/Never a named Jira ticket key/.test(ASK_CANDIDATE_SYSTEM), false);
     assert.equal(/state=closed AND merged=false/.test(ASK_CANDIDATE_SYSTEM), false);
     assert.equal(/onyx/i.test(ASK_CANDIDATE_SYSTEM), false);
+    assert.match(ASK_CANDIDATE_SYSTEM, /How answers are written/);
     assert.equal(ASK_CANDIDATE_SYSTEM, ASK_AGENT_SYSTEM);
   });
 });

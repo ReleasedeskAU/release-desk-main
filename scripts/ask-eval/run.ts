@@ -104,7 +104,6 @@ async function runOne(opts: {
       { role: "user" as const, content: opts.spec.question },
     ];
     const out = await completeAskWithTools(opts.openai, messages, {
-      allowTicketTable: true,
       indexedSources: opts.sources,
       userQuestion: opts.spec.question,
     });

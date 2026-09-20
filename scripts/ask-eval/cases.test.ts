@@ -15,6 +15,13 @@ describe("ask-eval cases", () => {
     );
   });
 
+  it("includes LATEST_MESSAGE in the closed list", () => {
+    const rows = selectAskEvalCases(["LATEST_MESSAGE"]);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.id, "LATEST_MESSAGE");
+    assert.equal(rows[0]?.requiresSource, "slack");
+  });
+
   it("selects a subset of the closed list and rejects unknown ids", () => {
     const rows = selectAskEvalCases(["JIRA_KEY", "CHANNEL"]);
     assert.deepEqual(

@@ -79,11 +79,15 @@ describe("document-only turn", () => {
     assert.equal(isDocumentOnlyTurn([]), false);
   });
 
-  it("auto-tables only on a first-turn identity lookup, not follow-ups", () => {
-    assert.equal(shouldFormatTicketTable([ASK_TOOL_DOCUMENT_BY_KEY], true), true);
-    assert.equal(shouldFormatTicketTable([ASK_TOOL_DOCUMENT_BY_KEY], false), false);
+  it("auto-tables only when the user asked for fields or a table", () => {
+    assert.equal(shouldFormatTicketTable([ASK_TOOL_DOCUMENT_BY_KEY], "what is BN-378 about"), false);
     assert.equal(
-      shouldFormatTicketTable([ASK_TOOL_DOCUMENT_BY_KEY, ASK_TOOL_GET_VERIFIED_COUNT], true),
+      shouldFormatTicketTable([ASK_TOOL_DOCUMENT_BY_KEY], "show the fields for BN-378 as a table"),
+      true
+    );
+    assert.equal(shouldFormatTicketTable([ASK_TOOL_DOCUMENT_BY_KEY], "list BN-378 fields"), true);
+    assert.equal(
+      shouldFormatTicketTable([ASK_TOOL_DOCUMENT_BY_KEY, ASK_TOOL_GET_VERIFIED_COUNT], "show the fields"),
       false
     );
   });

@@ -14,7 +14,8 @@ export type AskEvalCaseId =
   | "GH_REPOS"
   | "DESC"
   | "RESOLVED"
-  | "MISSING";
+  | "MISSING"
+  | "LATEST_MESSAGE";
 
 export type AskEvalOutcome = "pass" | "fail" | "infra" | "skip";
 

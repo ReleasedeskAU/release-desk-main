@@ -50,9 +50,15 @@ describe("completeAskWithTools traces", () => {
       openai,
       [{ role: "user", content: "what is BN-378 about" }],
       {
-        dispatchTool: async (name, raw) => ({
+        userQuestion: "what is BN-378 about",
+        dispatchTool: async (name) => ({
           name,
-          result: JSON.stringify({ found: true, key: "BN-378" }),
+          result: JSON.stringify({
+            found: true,
+            key: "BN-378",
+            title: "BN-378: Ask Retrieval Quality",
+            link: "https://releasedesk-team.atlassian.net/browse/BN-378",
+          }),
         }),
       }
     );
@@ -61,6 +67,37 @@ describe("completeAskWithTools traces", () => {
     assert.equal(out.calls[0]?.name, "get_document_by_key");
     assert.deepEqual(out.calls[0]?.arguments, { key: "BN-378" });
     assert.match(out.calls[0]?.result ?? "", /BN-378/);
+    assert.equal(out.text, "BN-378 is a task.");
+    assert.equal(out.text.includes("| Field | Value |"), false);
+  });
+
+  it("forces a Field|Value table only when the user asked for fields", async () => {
+    const openai = fakeOpenAI([
+      {
+        tool_calls: [
+          { id: "c1", name: "get_document_by_key", arguments: '{"key":"BN-378"}' },
+        ],
+      },
+      { content: "BN-378 is a task." },
+    ]);
+    const out = await completeAskWithTools(
+      openai,
+      [{ role: "user", content: "show the fields for BN-378 as a table" }],
+      {
+        userQuestion: "show the fields for BN-378 as a table",
+        dispatchTool: async (name) => ({
+          name,
+          result: JSON.stringify({
+            found: true,
+            key: "BN-378",
+            title: "BN-378: Ask Retrieval Quality",
+            link: "https://releasedesk-team.atlassian.net/browse/BN-378",
+            fields: { status: "To Do" },
+          }),
+        }),
+      }
+    );
+    assert.match(out.text, /\| Field \| Value \|/);
     assert.match(out.text, /BN-378/);
   });
 

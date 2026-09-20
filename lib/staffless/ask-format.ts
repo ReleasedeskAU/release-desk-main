@@ -56,14 +56,25 @@ export function isDocumentOnlyTurn(tools: readonly string[]): boolean {
 }
 
 /**
- * Auto Field|Value table only on a first-turn identity lookup.
- * Follow-ups (grouping, filter, summarize) keep the model prose.
+ * True when the user asked for a field dump or table, not a prose identity answer.
+ * @param question - Current user question.
  */
-export function shouldFormatTicketTable(
-  tools: readonly string[],
-  historyEmpty: boolean
-): boolean {
-  return historyEmpty && isDocumentOnlyTurn(tools);
+export function userAskedForFieldTable(question: string): boolean {
+  const q = question.toLowerCase();
+  if (/\bas a table\b|\bin a table\b|\bmarkdown table\b|\bfield\s*\|\s*value\b/.test(q)) {
+    return true;
+  }
+  if (/\bwhat fields\b/.test(q)) return true;
+  if (/\b(show|list|give|dump|print)\b.{0,48}\bfields\b/.test(q)) return true;
+  if (/\bfields\b.{0,24}\b(for|of|on|as)\b/.test(q)) return true;
+  return false;
+}
+
+/**
+ * Auto Field|Value table only when the user asked for fields/a table on a ticket-only turn.
+ */
+export function shouldFormatTicketTable(tools: readonly string[], question: string): boolean {
+  return isDocumentOnlyTurn(tools) && userAskedForFieldTable(question);
 }
 
 /**

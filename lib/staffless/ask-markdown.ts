@@ -143,6 +143,21 @@ function bulletText(line: string): string | null {
   return match ? (match[1] ?? "") : null;
 }
 
+/** Lone record link, e.g. `[View commit](https://…)` or a bare https URL. */
+function recordLinkText(line: string): string | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  if (/^\[[^\]]+\]\([^)]+\)$/.test(trimmed)) return trimmed;
+  if (/^https?:\/\/\S+$/i.test(trimmed)) return trimmed;
+  return null;
+}
+
+function continuesOrderedRecord(peek: string, hasItems: boolean): boolean {
+  if (numberedText(peek) != null) return true;
+  if (!hasItems) return false;
+  return bulletText(peek) != null || recordLinkText(peek) != null;
+}
+
 function nextNonEmptyLine(lines: string[], from: number): string {
   let i = from;
   while (i < lines.length && !(lines[i] ?? "").trim()) i += 1;
@@ -179,7 +194,8 @@ function readBulletList(
 
 /**
  * Numbered rows stay one list even when the model writes `1.` each time
- * and puts field bullets (or blank lines) between records.
+ * and puts field bullets, a lone View-commit link, or blank lines between
+ * records. The UI numbers from list position (1, 2, 3), not the typed `1.`.
  */
 function readOrderedList(
   lines: string[],
@@ -191,7 +207,7 @@ function readOrderedList(
     const line = lines[i] ?? "";
     if (!line.trim()) {
       const peek = nextNonEmptyLine(lines, i + 1);
-      if (numberedText(peek) != null || (items.length > 0 && bulletText(peek) != null)) {
+      if (continuesOrderedRecord(peek, items.length > 0)) {
         i += 1;
         continue;
       }
@@ -203,9 +219,10 @@ function readOrderedList(
       i += 1;
       continue;
     }
-    const bullet = bulletText(line);
-    if (bullet != null && items.length > 0) {
-      items[items.length - 1]?.nested.push(bullet);
+    const nested =
+      items.length > 0 ? (bulletText(line) ?? recordLinkText(line)) : null;
+    if (nested != null) {
+      items[items.length - 1]?.nested.push(nested);
       i += 1;
       continue;
     }

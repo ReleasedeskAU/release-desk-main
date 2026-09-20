@@ -21,7 +21,7 @@ import {
   ASK_SEARCHING_LABEL,
 } from "@/lib/staffless/ask-copy";
 import type { AskGrounding } from "@/lib/staffless/ask-grounding";
-import { type AskEvent, type AskSource, mergeAskSources } from "@/lib/staffless/ask-packets";
+import { ASK_SOURCE_CHIP_CAP, type AskEvent, type AskSource, mergeAskSources } from "@/lib/staffless/ask-packets";
 
 type AskMessage = {
   id: string;
@@ -289,7 +289,7 @@ function AskLoadingCard({ grounding }: { grounding: AskGrounding | null }) {
 }
 
 function AskSourceLinks({ sources }: { sources: AskSource[] }) {
-  const linked = sources.filter((source) => source.url);
+  const linked = sources.filter((source) => source.url).slice(0, ASK_SOURCE_CHIP_CAP);
   if (linked.length === 0) return null;
   return (
     <ul className="mt-3 flex flex-wrap gap-2" aria-label="Sources">

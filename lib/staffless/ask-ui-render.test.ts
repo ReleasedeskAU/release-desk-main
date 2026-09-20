@@ -4,19 +4,21 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AskGroundingBadge } from "@/components/ask/AskGroundingBadge";
 import { AskMarkdown } from "@/components/ask/AskMarkdown";
-import { ASK_GROUNDING_SEARCH, ASK_PUBLIC_UNAVAILABLE } from "./ask-copy";
+import { ASK_GROUNDING_INDEX, ASK_GROUNDING_INDEX_HINT, ASK_GROUNDING_SEARCH, ASK_PUBLIC_UNAVAILABLE } from "./ask-copy";
 
 function renderBadge(kind: "verified" | "search" | "mixed"): string {
   return renderToStaticMarkup(createElement(AskGroundingBadge, { kind }));
 }
 
 describe("Ask trust-signal badges", () => {
-  it("renders Verified from the shared status token", () => {
+  it("renders From index from the catalog path, with a live-system tooltip", () => {
     const html = renderBadge("verified");
-    assert.match(html, />Verified</);
+    assert.match(html, new RegExp(ASK_GROUNDING_INDEX));
+    assert.match(html, new RegExp(ASK_GROUNDING_INDEX_HINT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     assert.match(html, /bg-success-50/);
     assert.match(html, /text-success-600/);
     assert.equal(html.includes(ASK_GROUNDING_SEARCH), false);
+    assert.equal(html.includes("Verified"), false);
   });
 
   it("renders a distinct search chip with gray system tokens", () => {
@@ -29,8 +31,9 @@ describe("Ask trust-signal badges", () => {
 
   it("shows both chips when catalog and search were used", () => {
     const html = renderBadge("mixed");
-    assert.match(html, />Verified</);
+    assert.match(html, new RegExp(ASK_GROUNDING_INDEX));
     assert.match(html, new RegExp(ASK_GROUNDING_SEARCH));
+    assert.equal(html.includes("Verified"), false);
   });
 });
 

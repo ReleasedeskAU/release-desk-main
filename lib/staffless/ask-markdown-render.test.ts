@@ -58,6 +58,29 @@ describe("AskMarkdown rendering", () => {
     assert.match(html, /tabular-nums/);
   });
 
+  it("numbers GitHub View-commit records 1 2 3 instead of repeating 1", () => {
+    const html = renderAsk(
+      [
+        '1. Commit: "website-test added initial README.md"',
+        "",
+        "[View commit](https://github.com/ReleasedeskAU/website-test/commit/aaa)",
+        "",
+        '1. Commit: "website-test Add Release Desk marketing site"',
+        "",
+        "[View commit](https://github.com/ReleasedeskAU/website-test/commit/bbb)",
+        "",
+        '1. Commit: "website-test Merge pull request #1"',
+        "",
+        "[View commit](https://github.com/ReleasedeskAU/website-test/commit/ccc)",
+      ].join("\n")
+    );
+    assert.equal((html.match(/<ol/g) ?? []).length, 1);
+    assert.match(html, />1</);
+    assert.match(html, />2</);
+    assert.match(html, />3</);
+    assert.match(html, /View commit/);
+  });
+
   it("numbers split 1. records 1 2 3 instead of repeating 1", () => {
     const html = renderAsk(
       "1. **BN-14: Today's work**\n- Assignee: Kiran\n\n1. **BN-19: Shared connector**\n- Assignee: Kabir\n\n1. **BN-20: Testing**\n- Priority: High"
