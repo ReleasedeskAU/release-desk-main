@@ -524,18 +524,8 @@ function imapPlan(input: WizardCreateInput, refresh: number): StafflessCreatePla
 }
 
 function s3Connector(input: WizardConnectorInput, refresh: number): StafflessCreatePlan["connector"] {
-  const bucketName = requiredText(input.config?.bucket_name, "S3 needs access key, secret, bucket name, and at least one folder");
+  const bucketName = requiredText(input.config?.bucket_name, "S3 needs bucket name");
   const prefix = typeof input.config?.prefix === "string" ? input.config.prefix.trim() : "";
-  if (!prefix) {
-    throw new Error("S3 needs access key, secret, bucket name, and at least one folder");
-  }
-  const connector_specific_config: Record<string, unknown> = {
-    bucket_name: bucketName,
-    bucket_type: "s3",
-  };
-  if (prefix) {
-    connector_specific_config.prefix = prefix;
-  }
   return {
     name: input.name,
     source: "s3",
@@ -543,18 +533,22 @@ function s3Connector(input: WizardConnectorInput, refresh: number): StafflessCre
     access_type: "public",
     groups: [],
     refresh_freq: refresh,
-    connector_specific_config,
+    connector_specific_config: {
+      bucket_name: bucketName,
+      bucket_type: "s3",
+      prefix: prefix,
+    },
   };
 }
 
 function s3Plan(input: WizardCreateInput, refresh: number): StafflessCreatePlan {
   const accessKeyId = requiredText(
     input.credentials.access_key_id,
-    "S3 needs access key, secret, bucket name, and at least one folder"
+    "S3 needs access key ID and secret access key"
   );
   const secretAccessKey = requiredText(
     input.credentials.secret_access_key,
-    "S3 needs access key, secret, bucket name, and at least one folder"
+    "S3 needs access key ID and secret access key"
   );
   return {
     credential: {
