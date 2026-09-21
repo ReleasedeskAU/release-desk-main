@@ -480,7 +480,7 @@ export function buildAskTools(sourceIds: string[] = []): ChatCompletionTool[] {
     ),
     fnTool(
       ASK_TOOL_DEPENDENCY_CLOSURE,
-      "Stored-edge closure over up to 10 seed keys at once — everything one release or ticket set touches, without one call per key. direction=upstream (default) follows parent and issuelink edges; direction=downstream follows children and issuelink edges. depth defaults to 2, max 3. Discover seed keys first (labels filter or list), then ground every returned key with get_document_by_key or list_documents_matching — keys alone are not an answer. Same stored-edges-only contract as get_linked_work_items: no edge means not recorded, never invent a relationship from similar wording, shared assignee, or body mentions.",
+      "Stored-edge closure over up to 10 seed keys at once — call this before answering once a release's tickets are listed, because list rows carry no parent/link edges and the relations only appear here. Covers everything one release or ticket set touches, without one call per key. direction=upstream (default) follows parent and issuelink edges; direction=downstream follows children and issuelink edges. depth defaults to 2, max 3. Discover seed keys first (labels filter or list), then ground every returned key with get_document_by_key or list_documents_matching — keys alone are not an answer. Same stored-edges-only contract as get_linked_work_items: no edge means not recorded, never invent a relationship from similar wording, shared assignee, or body mentions.",
       {
         source: sourceProp,
         keys: {

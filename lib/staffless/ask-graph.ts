@@ -112,8 +112,23 @@ export function splitStoredValues(value: unknown): string[] {
 }
 
 /**
+ * Split an embedded "<kind>:<KEY>" stored link into its parts.
+ * Some indexes pack the kind with the target (e.g. "blocks:BN-217").
+ * Returns null unless the suffix is key-shaped — anything else stays verbatim
+ * so an odd stored value is never re-interpreted into a traversal.
+ */
+export function parseEmbeddedLink(value: string): { kind: string; key: string } | null {
+  const match = /^([^:,{}\[\]]+?)\s*:\s*([A-Za-z][A-Za-z0-9]*-\d+)$/.exec(value.trim());
+  if (!match?.[1] || !match?.[2]) return null;
+  const kind = match[1].trim();
+  if (!kind) return null;
+  return { kind, key: match[2] };
+}
+
+/**
  * Project stored tag fields onto edges. Only `parent` and `issuelink` produce
- * edges — description/body mentions never do.
+ * edges — description/body mentions never do. An embedded "<kind>:<KEY>" link
+ * is split so traversal can follow the key; the kind rides along verbatim.
  */
 export function edgesFromStoredFields(
   key: string,
@@ -129,11 +144,15 @@ export function edgesFromStoredFields(
   const links = splitStoredValues(fields.issuelink);
   const kinds = splitStoredValues(fields.issuelink_type);
   links.forEach((target, index) => {
-    if (normalizeGraphKey(target) === normalizeGraphKey(key)) return;
-    // Pairwise when the index wrote parallel arrays; a single stored kind
-    // applies to every link; otherwise the kind is unknown (null), not guessed.
-    const kind = kinds.length === links.length ? kinds[index] : kinds.length === 1 ? kinds[0] : null;
-    edges.push({ from_key: key, to_key: target, relation: "LINKS_TO", link_kind: kind ?? null, hops });
+    const embedded = parseEmbeddedLink(target);
+    const to = embedded?.key ?? target;
+    if (normalizeGraphKey(to) === normalizeGraphKey(key)) return;
+    // The kind attached to this specific link wins; otherwise fall back to
+    // parallel-array pairing, a single stored kind, or unknown (never guessed).
+    const kind =
+      embedded?.kind ??
+      (kinds.length === links.length ? kinds[index] : kinds.length === 1 ? kinds[0] : null);
+    edges.push({ from_key: key, to_key: to, relation: "LINKS_TO", link_kind: kind ?? null, hops });
   });
   return edges;
 }

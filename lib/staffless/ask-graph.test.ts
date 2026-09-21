@@ -12,6 +12,7 @@ import {
   getDependencyClosure,
   getLinkedWorkItems,
   normalizeGraphKey,
+  parseEmbeddedLink,
   splitStoredValues,
   type GraphFetchers,
 } from "./ask-graph";
@@ -117,6 +118,19 @@ describe("ask-graph stored-edge parsing", () => {
     assert.deepEqual(splitStoredValues(["RD-1", 42, null]), ["RD-1"]);
     assert.deepEqual(splitStoredValues(undefined), []);
     assert.equal(normalizeGraphKey(" rd-9 "), "RD-9");
+  });
+
+  it("splits embedded kind:KEY links and leaves anything else verbatim", () => {
+    assert.deepEqual(parseEmbeddedLink("blocks:BN-217"), { kind: "blocks", key: "BN-217" });
+    assert.deepEqual(parseEmbeddedLink("Relates : RD-5"), { kind: "Relates", key: "RD-5" });
+    assert.equal(parseEmbeddedLink("RD-7"), null);
+    assert.equal(parseEmbeddedLink("https://example.test/browse/BN-1"), null);
+    assert.equal(parseEmbeddedLink("not a link"), null);
+    const edges = edgesFromStoredFields("BN-215", { issuelink: "blocks:BN-217", issuelink_type: "blocks" }, 1);
+    assert.deepEqual(
+      edges.map((e) => [e.to_key, e.link_kind]),
+      [["BN-217", "blocks"]]
+    );
   });
 });
 

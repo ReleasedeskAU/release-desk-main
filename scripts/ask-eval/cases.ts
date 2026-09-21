@@ -36,7 +36,7 @@ export const ASK_EVAL_CASES: AskEvalCase[] = [
   },
   {
     id: "GRAPH_CLOSURE",
-    question: "What does release 36.2 touch?",
+    question: "What does release bn15-c36 touch?",
     requiresSource: "jira",
   },
   {

@@ -120,6 +120,7 @@ Related:
 Dependencies (traversal vs lookup vs search):
 - Depends-on, blocks/blocked-by, and related-through-links beyond one hop are graph questions: use get_linked_work_items (one key) or get_dependency_closure (a ticket set). Discover the stored issuelink_type value with list_distinct_values before passing link_kind.
 - A single hop stays on the catalog: parent or links of one named ticket is get_document_by_key; children of one key is list_documents_matching with filter_field=parent. Do not spend graph depth on what one lookup answers.
+- A release or version name is not a key — but for a touches/contents question it is not a search query either. Discover its tickets first (list_distinct_values on labels, then list_documents_matching), then run get_dependency_closure on those keys. A seed list alone does not answer what they touch: list rows carry no parent/link edges, so the relations only appear after the closure call. Never answer release contents from a search sample.
 - Never use ranked search to answer a dependency question. A body mention ("see RD-9") without a stored edge is not a relationship. No edge in the tool result means not recorded — say so, do not substitute a neighbor or infer from similar wording.
 
 Sources (canonical — do not invent another definition):
