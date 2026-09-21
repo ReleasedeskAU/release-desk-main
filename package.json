@@ -9,7 +9,7 @@
     "vercel-build": "node scripts/clean-and-generate-prisma.mjs && next build --webpack",
     "start": "next start",
     "lint": "next lint",
-    "test:staffless": "tsx --test \"lib/admin-connectors/**/*.test.ts\" \"lib/staffless/**/*.test.ts\" \"lib/connectors/**/*.test.ts\" \"lib/slack/**/*.test.ts\" \"lib/bitbucket/**/*.test.ts\" \"lib/gitlab/**/*.test.ts\" \"lib/jira/**/*.test.ts\" \"lib/github/**/*.test.ts\" \"lib/imap/**/*.test.ts\"",
+    "test:staffless": "tsx --test \"lib/admin-connectors/**/*.test.ts\" \"lib/staffless/**/*.test.ts\" \"lib/connectors/**/*.test.ts\" \"lib/s3/**/*.test.ts\" \"lib/slack/**/*.test.ts\" \"lib/bitbucket/**/*.test.ts\" \"lib/gitlab/**/*.test.ts\" \"lib/jira/**/*.test.ts\" \"lib/github/**/*.test.ts\" \"lib/imap/**/*.test.ts\"",
     "test:jira-ask-benchmark": "tsx --test \"scripts/jira-ask-benchmark/*.test.ts\"",
     "bench:jira-ask": "tsx scripts/jira-ask-benchmark/run.ts",
     "eval:ask-history": "tsx scripts/ask-eval/run.ts",
@@ -32,6 +32,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",
+    "@aws-sdk/client-s3": "3.1136.0",
     "@clerk/nextjs": "^7.5.12",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",

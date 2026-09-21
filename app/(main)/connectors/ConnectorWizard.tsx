@@ -27,6 +27,9 @@ import { ConnectorTypeIcon } from "./ConnectorTypeIcon";
 import { GithubRepoPicker } from "./GithubRepoPicker";
 import { ImapFolderPicker } from "./ImapFolderPicker";
 import { JiraProjectPicker } from "./JiraProjectPicker";
+import { S3FolderBrowser } from "./S3FolderBrowser";
+import { S3ScopeSummary } from "./S3ScopeSummary";
+import { initialS3Scopes, MAX_S3_SCOPES_PER_FLOW, s3FanoutName } from "@/lib/s3/scopes";
 
 function typeLabel(type: string): string {
   return getConnectorTypeDef(type)?.label ?? type;
@@ -230,6 +233,10 @@ export function ConnectorWizard({
   const [selectedSlackChannels, setSelectedSlackChannels] = useState<string[]>(() =>
     initialSlackChannels(existingConfig)
   );
+  const [selectedS3Scopes, setSelectedS3Scopes] = useState<string[]>(() =>
+    existingConnector?.type === "s3" ? initialS3Scopes(existingConfig) : []
+  );
+  const [s3Error, setS3Error] = useState<string | null>(null);
 
   const typeDef = useMemo(() => (selectedType ? getConnectorTypeDef(selectedType) : undefined), [selectedType]);
   const isJira = typeDef?.id === "jira";
@@ -238,7 +245,8 @@ export function ConnectorWizard({
   const isBitbucket = typeDef?.id === "bitbucket";
   const isImap = typeDef?.id === "imap";
   const isSlack = typeDef?.id === "slack";
-  const hasSourcePicker = isJira || isGitHub || isGitlab || isBitbucket || isImap || isSlack;
+  const isS3 = typeDef?.id === "s3";
+  const hasSourcePicker = isJira || isGitHub || isGitlab || isBitbucket || isImap || isSlack || isS3;
   const dataTypeOptions = selectedType ? CONNECTOR_DATA_TYPES[selectedType] ?? [] : [];
   const totalSteps = hasSourcePicker ? 4 : 3;
 
@@ -295,6 +303,25 @@ export function ConnectorWizard({
     imapSenderCount >= 0 &&
     (mailboxKind !== "personal" || imapSenderCount > 0);
   const canProceedSlackChannels = selectedSlackChannels.length > 0;
+  const canProceedS3Scopes =
+    selectedS3Scopes.length > 0 && selectedS3Scopes.length <= MAX_S3_SCOPES_PER_FLOW;
+
+  const toggleS3Scope = (scope: string, checked: boolean) => {
+    setS3Error(null);
+    setSelectedS3Scopes((prev) => {
+      if (!checked) return prev.filter((s) => s !== scope);
+      if (prev.includes(scope)) return prev;
+      // One folder per connector: editing swaps the scope, creating collects.
+      if (isEdit) return [scope];
+      if (prev.length >= MAX_S3_SCOPES_PER_FLOW) {
+        setS3Error(
+          `Select up to ${MAX_S3_SCOPES_PER_FLOW} folders per setup — add more later from the Connectors list.`
+        );
+        return prev;
+      }
+      return [...prev, scope];
+    });
+  };
 
   const checkFields = async () => {
     if (!typeDef) {
@@ -541,6 +568,10 @@ export function ConnectorWizard({
       setSlackError("Select at least one channel. Invite the bot to private channels first.");
       return;
     }
+    if (isS3 && selectedS3Scopes.length === 0) {
+      setS3Error("Select at least one folder. The whole bucket cannot be selected.");
+      return;
+    }
     if (isImap) {
       try {
         const senders = parseAllowedSenders(imapAllowedSenders);
@@ -590,6 +621,7 @@ export function ConnectorWizard({
           }
         : {};
       const slackConfig = isSlack ? { channels: selectedSlackChannels } : {};
+      const s3ScopeConfig = isS3 ? { prefix: selectedS3Scopes[0] ?? "" } : {};
       const payload: Record<string, unknown> = {
         name: name.trim(),
         baseUrl: baseUrl || undefined,
@@ -601,6 +633,7 @@ export function ConnectorWizard({
           ...bitbucketConfig,
           ...imapConfig,
           ...slackConfig,
+          ...s3ScopeConfig,
           ...(dataTypeOptions.length > 0 ? { dataTypes } : {}),
         },
         pollInterval,
@@ -623,6 +656,23 @@ export function ConnectorWizard({
         if (!res.ok) {
           alert(await readError(res));
           return;
+        }
+        if (isS3) {
+          // Scope edits re-index from the start: the old prefix's files must
+          // leave the index, which only a full re-index guarantees.
+          const nextScope = selectedS3Scopes[0] ?? "";
+          const prevScope = typeof existingConfig.prefix === "string" ? existingConfig.prefix : "";
+          if (nextScope && nextScope !== prevScope) {
+            const reindex = await fetch(`/api/connectors/${existingConnector.id}/sync-now`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ fromBeginning: true }),
+            });
+            if (!reindex.ok) {
+              alert(`Scope saved, but the full re-index could not start: ${await readError(reindex)}`);
+              return;
+            }
+          }
         }
       } else if (isGitHub) {
         const groups =
@@ -671,6 +721,28 @@ export function ConnectorWizard({
               config: groupConfig,
               pollInterval,
               indexingStart: indexingStartForRange(githubRange),
+            }),
+          });
+          if (!res.ok) {
+            alert(await readError(res));
+            return;
+          }
+        }
+      } else if (isS3) {
+        // One folder per connector instance: fan out N scopes into N
+        // connectors in one flow, each named after its scope.
+        const fanOut = selectedS3Scopes.length > 1;
+        for (const scope of selectedS3Scopes) {
+          const res = await fetch("/api/connectors", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: s3FanoutName(name.trim(), scope, fanOut),
+              type: typeDef.id,
+              authType: typeDef.authType,
+              credentials,
+              config: { ...config, prefix: scope },
+              pollInterval,
             }),
           });
           if (!res.ok) {
@@ -849,7 +921,9 @@ export function ConnectorWizard({
                     {field.help ? <p className="text-xs text-gray-500 mt-1">{field.help}</p> : null}
                   </div>
                 ))}
-              {typeDef.configFields.map((field) => (
+              {typeDef.configFields
+                .filter((field) => !(isS3 && field.key === "prefix"))
+                .map((field) => (
                 <div key={field.key}>
                   <label className="block text-sm font-semibold text-gray-700 mb-1">{field.label}</label>
                   <input
@@ -936,7 +1010,9 @@ export function ConnectorWizard({
                           ? "Next we ask the mailbox for its folder list. You must pick folders — there is no whole-inbox option."
                           : isSlack
                             ? "We check this bot token with Slack when you click Check fields. Invalid or revoked tokens cannot continue. Next we load channels the bot is already in — you must pick at least one."
-                            : "StaffLess has no separate connection-test API. Credentials are verified on the next Sync Now."}
+                            : isS3
+                              ? "Next we browse the bucket's folders. You must pick folders — there is no whole-bucket option."
+                              : "StaffLess has no separate connection-test API. Credentials are verified on the next Sync Now."}
               </p>
               <div className="flex justify-between pt-4">
                 {!hideTypeStep ? (
@@ -1343,9 +1419,61 @@ export function ConnectorWizard({
             </div>
           )}
 
+          {step === 3 && isS3 && (
+            <div className="space-y-4">
+              <S3FolderBrowser
+                accessKeyId={credentials.access_key_id ?? ""}
+                secretAccessKey={credentials.secret_access_key ?? ""}
+                bucket={config.bucket_name?.trim() ?? ""}
+                selected={selectedS3Scopes}
+                onToggleScope={toggleS3Scope}
+                single={isEdit}
+                canBrowse={Boolean(
+                  credentials.access_key_id?.trim() &&
+                    credentials.secret_access_key &&
+                    config.bucket_name?.trim()
+                )}
+              />
+              {s3Error ? <p className="text-sm text-red-700">{s3Error}</p> : null}
+              {isEdit && !replaceCredentials && (
+                <p className="text-xs text-gray-500">
+                  Enter credentials again (Replace credentials) to browse the live bucket. Until then the saved scope
+                  is kept.
+                </p>
+              )}
+              {isEdit && (
+                <p className="text-xs font-semibold text-amber-900">
+                  Saving a different folder removes the previously indexed files and re-indexes from the start.
+                </p>
+              )}
+              <div className="flex justify-between pt-4">
+                <button type="button" onClick={() => setStep(2)} className="text-sm text-gray-600 hover:underline">
+                  Back
+                </button>
+                <button
+                  type="button"
+                  disabled={!canProceedS3Scopes}
+                  onClick={() => setStep(4)}
+                  className="rounded-lg bg-[#2548C9] px-5 py-2 text-sm font-semibold text-white disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+
           {((step === 3 && !hasSourcePicker) || (step === 4 && hasSourcePicker)) && typeDef && (
             <div className="space-y-4">
-              {hasSourcePicker && !isEdit && (
+              {isS3 && selectedS3Scopes.length > 0 && (
+                <S3ScopeSummary
+                  accessKeyId={credentials.access_key_id ?? ""}
+                  secretAccessKey={credentials.secret_access_key ?? ""}
+                  bucket={config.bucket_name?.trim() ?? ""}
+                  scopes={selectedS3Scopes}
+                  isEdit={isEdit}
+                />
+              )}
+              {hasSourcePicker && !isEdit && !isS3 && (
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-gray-700">How far back should we copy?</label>
                   <p className="text-xs text-gray-500">

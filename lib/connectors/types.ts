@@ -1,4 +1,4 @@
-export type ConnectorTypeId = "jira" | "github" | "gitlab" | "bitbucket" | "teams" | "imap" | "slack";
+export type ConnectorTypeId = "jira" | "github" | "gitlab" | "bitbucket" | "teams" | "imap" | "slack" | "s3";
 
 export interface ConnectorFieldDef {
   key: string;
@@ -202,6 +202,47 @@ export const CONNECTOR_TYPES: ConnectorTypeDef[] = [
       },
     ],
     configFields: [],
+    targetModel: "WorkItem",
+  },
+  {
+    id: "s3",
+    label: "Amazon S3",
+    authType: "api_key",
+    available: true,
+    defaultPollInterval: 15,
+    setupHint:
+      "Use an IAM access key with s3:ListBucket and s3:GetObject on this bucket. Check fields validates the shape; the next step browses the live bucket so you can pick folders — you must pick at least one, there is no whole-bucket option.",
+    credentialFields: [
+      {
+        key: "access_key_id",
+        label: "Access key ID",
+        type: "text",
+        placeholder: "AKIA…",
+      },
+      {
+        key: "secret_access_key",
+        label: "Secret access key",
+        type: "password",
+        help: "Never pasted into Ask or logs.",
+      },
+    ],
+    configFields: [
+      {
+        key: "bucket_name",
+        label: "Bucket name",
+        type: "text",
+        placeholder: "company-releases",
+        help: "Exact bucket name (no s3:// prefix, no slashes).",
+      },
+      {
+        key: "prefix",
+        label: "Folder prefix",
+        type: "text",
+        placeholder: "releases/frontend/",
+        optional: true,
+        help: "Managed by the folder browser on the next step — leave this to the browser.",
+      },
+    ],
     targetModel: "WorkItem",
   },
 ];

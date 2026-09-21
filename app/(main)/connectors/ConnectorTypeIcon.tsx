@@ -6,6 +6,7 @@ export function ConnectorTypeIcon({ type }: { type: string }) {
     teams: "bg-[#5558AF] text-white",
     imap: "bg-[#0F6CBD] text-white",
     slack: "bg-[#4A154B] text-white",
+    s3: "bg-[#232F3E] text-white",
   };
   const label = type.charAt(0).toUpperCase() || "?";
   return (
