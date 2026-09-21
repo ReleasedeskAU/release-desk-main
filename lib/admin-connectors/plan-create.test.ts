@@ -62,6 +62,45 @@ describe("planCatalogCreate", () => {
     assert.equal(cfg.include_commits, false);
   });
 
+  it("sends bucket_type for blob sources (S3/R2/GCS/OCI)", () => {
+    const cases: Array<{ source: string; bucket_type: string }> = [
+      { source: "s3", bucket_type: "s3" },
+      { source: "r2", bucket_type: "r2" },
+      { source: "google_cloud_storage", bucket_type: "google_cloud_storage" },
+      { source: "oci_storage", bucket_type: "oci_storage" },
+    ];
+    for (const { source, bucket_type } of cases) {
+      const plan = planCatalogCreate({
+        name: "Blobs",
+        source,
+        credentials:
+          source === "r2"
+            ? { account_id: "acct", r2_access_key_id: "k", r2_secret_access_key: "s" }
+            : source === "oci_storage"
+              ? { namespace: "ns", region: "r", access_key_id: "k", secret_access_key: "s" }
+              : source === "s3"
+                ? { aws_access_key_id: "k", aws_secret_access_key: "s" }
+                : { access_key_id: "k", secret_access_key: "s" },
+        config: { bucket_name: "bkt" },
+      });
+      assert.equal(plan.connector.connector_specific_config.bucket_type, bucket_type);
+      assert.equal(plan.connector.connector_specific_config.bucket_name, "bkt");
+    }
+  });
+
+  it("rejects a caller-supplied bucket_type override", () => {
+    assert.throws(
+      () =>
+        planCatalogCreate({
+          name: "S3",
+          source: "s3",
+          credentials: { aws_access_key_id: "k", aws_secret_access_key: "s" },
+          config: { bucket_name: "bkt", bucket_type: "r2" },
+        }),
+      CatalogCreateError
+    );
+  });
+
   it("rejects unknown extra credential keys", () => {
     assert.throws(
       () =>

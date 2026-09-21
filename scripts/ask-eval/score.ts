@@ -48,6 +48,12 @@ export function scoreAskEvalTurn(
       return scoreMissing(text, calls);
     case "LATEST_MESSAGE":
       return scoreLatestMessage(text, calls);
+    case "GRAPH_BLOCKERS":
+      return scoreGraphBlockers(text, calls);
+    case "GRAPH_CLOSURE":
+      return scoreGraphClosure(text, calls);
+    case "GRAPH_CHILDREN":
+      return scoreGraphChildren(text, calls);
     default:
       return { outcome: "fail", reason: "unknown_case" };
   }
@@ -346,4 +352,71 @@ function answerCitesListRow(text: string, row: ListRow): boolean {
     if (t.includes(needle.toLowerCase())) return true;
   }
   return false;
+}
+
+/**
+ * Stage 1 graph scorers. Live tenants carry their own link vocabularies, so
+ * these score tool-choice discipline (graph over search, stored kinds over
+ * guesses); exact key-set proof lives in lib/staffless/ask-graph.test.ts.
+ */
+function usedSearchForDeps(calls: readonly AskToolTraceCall[]): boolean {
+  return calls.some((c) => c.name === "search_indexed_documents");
+}
+
+function distinctKinds(calls: readonly AskToolTraceCall[]): string[] {
+  const out: string[] = [];
+  for (const call of calls) {
+    if (call.name !== "list_distinct_values") continue;
+    if (String(asRecord(call.arguments).field ?? "").toLowerCase() !== "issuelink_type") continue;
+    try {
+      const payload = JSON.parse(call.result) as { values?: unknown };
+      if (!Array.isArray(payload.values)) continue;
+      for (const value of payload.values) {
+        if (typeof value === "string" && value.trim()) out.push(value.toLowerCase());
+      }
+    } catch {
+      continue;
+    }
+  }
+  return out;
+}
+
+function graphArgs(calls: readonly AskToolTraceCall[], name: string): Record<string, unknown>[] {
+  return argsOf(calls, name);
+}
+
+function scoreGraphBlockers(text: string, calls: readonly AskToolTraceCall[]): AskEvalScore {
+  if (usedSearchForDeps(calls)) return { outcome: "fail", reason: "used_search_for_deps" };
+  const linked = graphArgs(calls, "get_linked_work_items");
+  if (linked.length === 0) return { outcome: "fail", reason: "no_graph_tool" };
+  const kinds = linked
+    .map((a) => String(a.link_kind ?? "").toLowerCase())
+    .filter((k) => k.length > 0);
+  const stored = distinctKinds(calls);
+  if (kinds.some((k) => stored.length > 0 && !stored.includes(k))) {
+    return { outcome: "fail", reason: "link_kind_guessed" };
+  }
+  if (kinds.length > 0 && stored.length === 0) return { outcome: "fail", reason: "link_kind_without_discovery" };
+  void text;
+  return { outcome: "pass", reason: "graph_blockers" };
+}
+
+function scoreGraphClosure(text: string, calls: readonly AskToolTraceCall[]): AskEvalScore {
+  if (usedSearchForDeps(calls)) return { outcome: "fail", reason: "used_search_for_deps" };
+  if (graphArgs(calls, "get_dependency_closure").length === 0) {
+    return { outcome: "fail", reason: "no_graph_tool" };
+  }
+  void text;
+  return { outcome: "pass", reason: "graph_closure" };
+}
+
+function scoreGraphChildren(text: string, calls: readonly AskToolTraceCall[]): AskEvalScore {
+  if (usedSearchForDeps(calls)) return { outcome: "fail", reason: "used_search_for_deps" };
+  const viaGraph = graphArgs(calls, "get_linked_work_items").some(
+    (a) => String(a.relation ?? "linked").toLowerCase() === "children"
+  );
+  const viaCatalog = allFilters(calls).some((f) => f.field.toLowerCase() === "parent");
+  if (!viaGraph && !viaCatalog) return { outcome: "fail", reason: "no_children_path" };
+  void text;
+  return { outcome: "pass", reason: viaGraph ? "graph_children" : "catalog_children_parity" };
 }

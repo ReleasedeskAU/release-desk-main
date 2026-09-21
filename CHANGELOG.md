@@ -8,11 +8,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Ask stored-edge traversal (Stage 1, Jira tags only):** `get_linked_work_items` (one key: `children` | `parent_chain` | `linked`, optional verbatim `link_kind`, depth max 3) and `get_dependency_closure` (1–10 seeds, upstream/downstream, depth max 3) traverse indexed `parent` / `issuelink` / `issuelink_type` tags through the existing catalog APIs — no new infrastructure, no raw query language. One `LINKS_TO` edge with the verbatim stored kind (never hardcoded `BLOCKS`); `LINKS_TO` is undirected. Missing PAT fails closed as `tool_failed`, never "not in the index." Both tools count toward the verified grounding signal. Auth unchanged (`readonly` Ask, engine admin PAT).
+
 - **Ask historical eval:** `scripts/ask-eval` runs the live Ask tool loop (`gpt-4o`, temperature 0.2) against a closed set of past failures, 5 times each, with tool traces. Infra failures are scored separately from model fails. Missing/empty sources skip. A six-principles candidate prompt lives in the harness only until it matches baseline. Auth unchanged (`readonly` Ask, engine admin PAT). No tokens in output.
 
 - **Ask document body:** `get_document_content` reads one indexed document by OpenSearch `document_id` (from search/list rows). Extra title/link keys are ignored. Search rows expose that OpenSearch id (not a Slack title prefix like `admin in #social`). Engine `POST /admin/document-content` uses the same tenant + ACL filters as admin search; ACL miss or a 4xx is `found: false`. A 5xx does not pivot to counts. Body is capped at 16 chunks / 24k chars with an explicit `truncated` flag. Max 3 fetches per Ask turn. Body text is not logged. Auth unchanged (`readonly` Ask, engine admin PAT).
 
 ### Changed
+
+- **Ask search thoroughness before deferral:** Clarifying questions only after a `source=all` search miss or a real source conflict — not after a named-source-only walk. When/scheduled phrasing can be indexed content, not automatically a catalog `duedate`. Search/content “never due dates” is narrowed to structured due-date facts. `list_documents_matching` no longer claims an unfiltered `source=all` list. Auth unchanged. BN-378.
 
 - **Ask answer tone (grounding unchanged):** First-turn `get_document_by_key` no longer replaces the model’s prose with a Field|Value table unless the user asked for fields/a table. Source chips cap at 3 (cited URLs first, else the latest catalog list). Empty/`Unknown Subject` titles become source+key or “Teams conversation”. The catalog chip label is **From index** (same meaning: a catalog tool ran, not a live-system guarantee). Temperature stays 0.2; no general-knowledge fallback. Auth unchanged. BN-378.
 

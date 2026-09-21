@@ -6,9 +6,11 @@
 
 import {
   ASK_TOOL_BREAKDOWN,
+  ASK_TOOL_DEPENDENCY_CLOSURE,
   ASK_TOOL_DISTINCT,
   ASK_TOOL_DOCUMENT_BY_KEY,
   ASK_TOOL_GET_VERIFIED_COUNT,
+  ASK_TOOL_LINKED_ITEMS,
   ASK_TOOL_LIST_MATCHING,
   ASK_TOOL_QUERYABLE_FIELDS,
   ASK_TOOL_SEARCH_INDEX,
@@ -24,6 +26,10 @@ const VERIFIED_TOOLS = new Set([
   ASK_TOOL_DOCUMENT_BY_KEY,
   ASK_TOOL_LIST_MATCHING,
   ASK_TOOL_QUERYABLE_FIELDS,
+  // Stored-edge traversal reads the same indexed tags through the catalog —
+  // exact reads, not search samples — so they carry the verified signal.
+  ASK_TOOL_LINKED_ITEMS,
+  ASK_TOOL_DEPENDENCY_CLOSURE,
 ]);
 
 /**

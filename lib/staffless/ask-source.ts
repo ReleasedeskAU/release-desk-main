@@ -87,6 +87,6 @@ export function formatAskSourceInventory(sources: AskIndexedSource[]): string {
   return [
     "Indexed connector sources this turn (created connectors; 0 documents means connected but not yet searchable):",
     ...lines,
-    "Use source=<id> on tools. source=all means every listed source. A missing id is not created. Never claim a fixed vendor list.",
+    "Use source=<id> when the question names a source. Source-less content search uses source=all (or omit source); do not walk created sources one at a time. A missing id is not created. Never claim a fixed vendor list.",
   ].join("\n");
 }

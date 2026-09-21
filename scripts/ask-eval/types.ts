@@ -15,7 +15,10 @@ export type AskEvalCaseId =
   | "DESC"
   | "RESOLVED"
   | "MISSING"
-  | "LATEST_MESSAGE";
+  | "LATEST_MESSAGE"
+  | "GRAPH_BLOCKERS"
+  | "GRAPH_CLOSURE"
+  | "GRAPH_CHILDREN";
 
 export type AskEvalOutcome = "pass" | "fail" | "infra" | "skip";
 

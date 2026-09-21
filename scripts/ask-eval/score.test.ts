@@ -226,4 +226,59 @@ describe("scoreAskEvalTurn", () => {
     assert.equal(scored.outcome, "pass");
     assert.equal(scored.reason, "list_date_desc");
   });
+
+  it("fails GRAPH_BLOCKERS when search answers a dependency question", () => {
+    const scored = scoreAskEvalTurn("GRAPH_BLOCKERS", "RD-101 blocks RD-114.", [
+      call("search_indexed_documents", { query: "RD-114 blocking" }),
+    ]);
+    assert.equal(scored.outcome, "fail");
+    assert.equal(scored.reason, "used_search_for_deps");
+  });
+
+  it("fails GRAPH_BLOCKERS when link_kind skips stored-value discovery", () => {
+    const scored = scoreAskEvalTurn("GRAPH_BLOCKERS", "RD-101 blocks RD-114.", [
+      call("get_linked_work_items", { key: "RD-114", relation: "linked", link_kind: "Blocks" }),
+    ]);
+    assert.equal(scored.outcome, "fail");
+    assert.equal(scored.reason, "link_kind_without_discovery");
+  });
+
+  it("passes GRAPH_BLOCKERS when link_kind comes from distinct issuelink_type", () => {
+    const scored = scoreAskEvalTurn("GRAPH_BLOCKERS", "RD-101 and RD-107 block RD-114.", [
+      call(
+        "list_distinct_values",
+        { source: "jira", field: "issuelink_type" },
+        JSON.stringify({ values: ["Blocks", "Relates"], total_indexed: 10, untagged_count: 2 })
+      ),
+      call("get_linked_work_items", { key: "RD-114", relation: "linked", link_kind: "Blocks" }),
+    ]);
+    assert.equal(scored.outcome, "pass");
+    assert.equal(scored.reason, "graph_blockers");
+  });
+
+  it("fails GRAPH_CLOSURE without the closure tool and passes with it", () => {
+    const without = scoreAskEvalTurn("GRAPH_CLOSURE", "Release 36.2 touches RD-201.", [
+      call("get_verified_count", { source: "jira", filter_field: "labels", filter_value: "release-36.2" }),
+    ]);
+    assert.equal(without.outcome, "fail");
+    assert.equal(without.reason, "no_graph_tool");
+    const withClosure = scoreAskEvalTurn("GRAPH_CLOSURE", "Release 36.2 touches RD-201 and RD-301.", [
+      call("list_documents_matching", { source: "jira", filter_field: "labels", filter_value: "release-36.2" }),
+      call("get_dependency_closure", { source: "jira", keys: ["RD-201"], direction: "upstream" }),
+    ]);
+    assert.equal(withClosure.outcome, "pass");
+  });
+
+  it("passes GRAPH_CHILDREN on either the graph or the catalog parent path", () => {
+    const viaGraph = scoreAskEvalTurn("GRAPH_CHILDREN", "BN-16 and BN-17 are children of BN-15.", [
+      call("get_linked_work_items", { source: "jira", key: "BN-15", relation: "children" }),
+    ]);
+    assert.equal(viaGraph.outcome, "pass");
+    assert.equal(viaGraph.reason, "graph_children");
+    const viaCatalog = scoreAskEvalTurn("GRAPH_CHILDREN", "BN-16 is a child of BN-15.", [
+      call("list_documents_matching", { source: "jira", filter_field: "parent", filter_value: "BN-15" }),
+    ]);
+    assert.equal(viaCatalog.outcome, "pass");
+    assert.equal(viaCatalog.reason, "catalog_children_parity");
+  });
 });

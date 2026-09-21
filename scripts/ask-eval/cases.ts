@@ -29,6 +29,21 @@ export const ASK_EVAL_CASES: AskEvalCase[] = [
     question: "what is the latest message from admin in the social channel",
     requiresSource: "slack",
   },
+  {
+    id: "GRAPH_BLOCKERS",
+    question: "What is blocking RD-114?",
+    requiresSource: "jira",
+  },
+  {
+    id: "GRAPH_CLOSURE",
+    question: "What does release 36.2 touch?",
+    requiresSource: "jira",
+  },
+  {
+    id: "GRAPH_CHILDREN",
+    question: "What are the children of BN-15?",
+    requiresSource: "jira",
+  },
 ];
 
 /**

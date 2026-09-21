@@ -22,4 +22,4 @@ export const ASK_DOCUMENT_CONTENT_FAILURE_HINT =
   "Body lookup failed. Retry once with the exact document_id from search or list (not title, not link). If it fails again, quote any blurb you already have for that thread and say the full body could not be loaded. Do not offer counts or breakdowns for a description or replies question.";
 
 export const ASK_NO_TOOL_HINT =
-  "If no tool can answer the question, say clearly what they asked for that you cannot do, then offer the closest thing that is possible: exact counts, breakdowns by field, listing matching documents, listing values, looking up a document by key, or searching indexed content. Do not invent an answer.";
+  "Do not conclude no tool can answer until a source-less content question has had search_indexed_documents with source=all (or omitted source). Offering search as a consolation is not a search. If after that no tool can answer, say clearly what they asked for that you cannot do, then offer the closest thing that is possible: exact counts, breakdowns by field, listing matching documents, listing values, looking up a document by key, or searching indexed content. Do not invent an answer.";

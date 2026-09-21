@@ -42,6 +42,16 @@ export class CatalogCreateError extends Error {
   }
 }
 
+// Blob sources share the engine BlobStorageConnector, whose constructor
+// requires bucket_type. The catalog has no such field (it would just repeat
+// the source tile), so the source id determines it server-side.
+const BLOB_BUCKET_TYPES: Record<string, string> = {
+  s3: "s3",
+  r2: "r2",
+  google_cloud_storage: "google_cloud_storage",
+  oci_storage: "oci_storage",
+};
+
 function refreshSeconds(pollInterval?: number): number {
   return Math.max(60, (pollInterval ?? 15) * 60);
 }
@@ -137,7 +147,10 @@ export function planCatalogCreate(input: CatalogCreateInput): CatalogCreatePlan 
   }
 
   const credentialJson = pickFields(source.credentialFields, input.credentials, "credentials");
-  const config = pickFields(source.configFields, input.config, "options");
+  const pickedConfig = pickFields(source.configFields, input.config, "options");
+  // pickFields rejects unknown option keys, so a caller cannot override this.
+  const bucketType = BLOB_BUCKET_TYPES[sourceId];
+  const config = bucketType ? { ...pickedConfig, bucket_type: bucketType } : pickedConfig;
 
   return {
     credential: {
