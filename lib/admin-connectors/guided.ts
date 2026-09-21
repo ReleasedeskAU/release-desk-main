@@ -2,7 +2,7 @@ import type { ConnectorTypeId } from "@/lib/connectors/types";
 import { isStafflessConnectorType } from "@/lib/staffless/create-payload";
 
 /**
- * Jira, GitHub, GitLab, Bitbucket, Teams, IMAP, or Slack when this catalog tile should open the
+ * Jira, GitHub, GitLab, Bitbucket, Teams, IMAP, Slack, or S3 when this catalog tile should open the
  * Connectors guided wizard (live pickers, Check fields, POST /api/connectors).
  */
 export function guidedConnectorType(sourceId: string): ConnectorTypeId | null {
@@ -15,7 +15,8 @@ export function guidedConnectorType(sourceId: string): ConnectorTypeId | null {
     id === "bitbucket" ||
     id === "teams" ||
     id === "imap" ||
-    id === "slack"
+    id === "slack" ||
+    id === "s3"
   ) {
     return id;
   }

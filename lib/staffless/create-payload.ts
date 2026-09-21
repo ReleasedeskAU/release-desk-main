@@ -46,7 +46,7 @@ export type StafflessCreatePlan = {
   };
 };
 
-const SUPPORTED = new Set(["jira", "github", "gitlab", "bitbucket", "teams", "imap", "slack"]);
+const SUPPORTED = new Set(["jira", "github", "gitlab", "bitbucket", "teams", "imap", "slack", "s3"]);
 const IMAP_DEFAULT_PORT = 993;
 const IMAP_MAX_PORT = 65535;
 
@@ -75,6 +75,7 @@ export function planStafflessConnector(input: WizardConnectorInput): StafflessCr
   if (type === "bitbucket") return bitbucketConnector(input, refresh);
   if (type === "teams") return teamsConnector(input, refresh);
   if (type === "slack") return slackConnector(input, refresh);
+  if (type === "s3") return s3Connector(input, refresh);
   return imapConnector(input, refresh);
 }
 
@@ -94,6 +95,7 @@ export function planStafflessCreate(input: WizardCreateInput): StafflessCreatePl
   if (type === "bitbucket") return bitbucketPlan(input, refresh);
   if (type === "teams") return teamsPlan(input, refresh);
   if (type === "slack") return slackPlan(input, refresh);
+  if (type === "s3") return s3Plan(input, refresh);
   return imapPlan(input, refresh);
 }
 
@@ -518,5 +520,52 @@ function imapPlan(input: WizardCreateInput, refresh: number): StafflessCreatePla
       credential_json: { imap_username: username, imap_password: password },
     },
     connector: imapConnector(input, refresh),
+  };
+}
+
+function s3Connector(input: WizardConnectorInput, refresh: number): StafflessCreatePlan["connector"] {
+  const bucketName = requiredText(input.config?.bucket_name, "S3 needs access key, secret, bucket name, and at least one folder");
+  const prefix = typeof input.config?.prefix === "string" ? input.config.prefix.trim() : "";
+  if (!prefix) {
+    throw new Error("S3 needs access key, secret, bucket name, and at least one folder");
+  }
+  const connector_specific_config: Record<string, unknown> = {
+    bucket_name: bucketName,
+    bucket_type: "s3",
+  };
+  if (prefix) {
+    connector_specific_config.prefix = prefix;
+  }
+  return {
+    name: input.name,
+    source: "s3",
+    input_type: "poll",
+    access_type: "public",
+    groups: [],
+    refresh_freq: refresh,
+    connector_specific_config,
+  };
+}
+
+function s3Plan(input: WizardCreateInput, refresh: number): StafflessCreatePlan {
+  const accessKeyId = requiredText(
+    input.credentials.access_key_id,
+    "S3 needs access key, secret, bucket name, and at least one folder"
+  );
+  const secretAccessKey = requiredText(
+    input.credentials.secret_access_key,
+    "S3 needs access key, secret, bucket name, and at least one folder"
+  );
+  return {
+    credential: {
+      name: `${input.name} credentials`,
+      source: "s3",
+      admin_public: true,
+      credential_json: { 
+        aws_access_key_id: accessKeyId, 
+        aws_secret_access_key: secretAccessKey 
+      },
+    },
+    connector: s3Connector(input, refresh),
   };
 }
