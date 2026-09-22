@@ -30,7 +30,7 @@ import { ImapFolderPicker } from "./ImapFolderPicker";
 import { JiraProjectPicker } from "./JiraProjectPicker";
 import { S3FolderBrowser } from "./S3FolderBrowser";
 import { S3ScopeSummary } from "./S3ScopeSummary";
-import { initialS3Scopes, MAX_S3_SCOPES_PER_FLOW, s3FanoutName } from "@/lib/s3/scopes";
+import { initialS3Scopes, MAX_S3_SCOPES_PER_FLOW } from "@/lib/s3/scopes";
 import { selectionChanged } from "@/lib/connectors/scope-edit";
 
 const SCOPE_REINDEX_NOTICE =
@@ -415,12 +415,8 @@ export function ConnectorWizard({
     setSelectedS3Scopes((prev) => {
       if (!checked) return prev.filter((s) => s !== scope);
       if (prev.includes(scope)) return prev;
-      // One folder per connector: editing swaps the scope, creating collects.
-      if (isEdit) return [scope];
       if (prev.length >= MAX_S3_SCOPES_PER_FLOW) {
-        setS3Error(
-          `Select up to ${MAX_S3_SCOPES_PER_FLOW} folders per setup — add more later from the Connectors list.`
-        );
+        setS3Error(`Select up to ${MAX_S3_SCOPES_PER_FLOW} folders on this connector.`);
         return prev;
       }
       return [...prev, scope];
@@ -471,7 +467,9 @@ export function ConnectorWizard({
                       ? { channels: ["general"] }
                       : isTeams
                         ? { teams: ["field-check"] }
-                        : { ...config, dataTypes },
+                        : isS3
+                          ? { ...config, prefixes: ["field-check/"] }
+                          : { ...config, dataTypes },
         }),
       });
       const body = (await res.json()) as { ok?: boolean; message?: string; error?: string };
@@ -776,7 +774,7 @@ export function ConnectorWizard({
         : {};
       const slackConfig = isSlack ? { channels: selectedSlackChannels } : {};
       const teamsConfig = isTeams ? { teams: selectedTeams } : {};
-      const s3ScopeConfig = isS3 ? { prefix: selectedS3Scopes[0] ?? "" } : {};
+      const s3ScopeConfig = isS3 ? { prefixes: selectedS3Scopes, prefix: selectedS3Scopes[0] ?? "" } : {};
       const payload: Record<string, unknown> = {
         name: name.trim(),
         baseUrl: baseUrl || undefined,
@@ -871,28 +869,6 @@ export function ConnectorWizard({
               config: groupConfig,
               pollInterval,
               indexingStart: indexingStartForRange(githubRange),
-            }),
-          });
-          if (!res.ok) {
-            alert(await readError(res));
-            return;
-          }
-        }
-      } else if (isS3) {
-        // One folder per connector instance: fan out N scopes into N
-        // connectors in one flow, each named after its scope.
-        const fanOut = selectedS3Scopes.length > 1;
-        for (const scope of selectedS3Scopes) {
-          const res = await fetch("/api/connectors", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              name: s3FanoutName(name.trim(), scope, fanOut),
-              type: typeDef.id,
-              authType: typeDef.authType,
-              credentials,
-              config: { ...config, prefix: scope },
-              pollInterval,
             }),
           });
           if (!res.ok) {
@@ -1652,7 +1628,6 @@ export function ConnectorWizard({
                 connectorId={storedConnectorId}
                 selected={selectedS3Scopes}
                 onToggleScope={toggleS3Scope}
-                single={isEdit}
                 canBrowse={Boolean(
                   storedConnectorId ||
                     (credentials.access_key_id?.trim() &&

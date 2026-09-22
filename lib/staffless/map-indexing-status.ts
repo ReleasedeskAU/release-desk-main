@@ -5,6 +5,7 @@
  */
 
 import { parseGeneratedJiraProjectJql } from "@/lib/jira/project-keys";
+import { parseS3Prefixes } from "@/lib/s3/scopes";
 import { toPositiveStafflessId } from "@/lib/staffless/ids";
 
 /** Quiet list refresh while a deletion job is in progress. */
@@ -260,6 +261,7 @@ export function mapConnectorToTableRow(
             : [])
       : [];
   const dataTypes = wizardDataTypes(type, cfg);
+  const s3Prefixes = type === "s3" ? parseS3Prefixes(cfg) : [];
 
   return {
     id: String(connector.id),
@@ -293,9 +295,7 @@ export function mapConnectorToTableRow(
       ...(type === "s3" && typeof cfg.bucket_name === "string" && cfg.bucket_name.trim()
         ? { bucket_name: cfg.bucket_name.trim() }
         : {}),
-      ...(type === "s3" && typeof cfg.prefix === "string" && cfg.prefix.trim()
-        ? { prefix: cfg.prefix.trim() }
-        : {}),
+      ...(s3Prefixes.length > 0 ? { prefixes: s3Prefixes, prefix: s3Prefixes[0] } : {}),
       ...(dataTypes ? { dataTypes } : {}),
     },
     pollInterval: connector.refresh_freq ? Math.max(1, Math.round(connector.refresh_freq / 60)) : 15,

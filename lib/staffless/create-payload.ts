@@ -11,6 +11,7 @@ import { parsePublicGitlabOrigin } from "@/lib/gitlab/site";
 import { allowedSenderValues } from "@/lib/imap/allowed-senders";
 import { parseImapMailboxNames } from "@/lib/imap/mailboxes";
 import { isJiraAllProjects, jiraProjectInJql, parseJiraProjectKeys } from "@/lib/jira/project-keys";
+import { MAX_S3_SCOPES_PER_FLOW, parseS3Prefixes } from "@/lib/s3/scopes";
 import { parseSlackChannelNames } from "@/lib/slack/fetch-channels";
 import { parseTeamNames } from "@/lib/teams/fetch-teams";
 
@@ -530,8 +531,17 @@ function imapPlan(input: WizardCreateInput, refresh: number): StafflessCreatePla
 }
 
 function s3Connector(input: WizardConnectorInput, refresh: number): StafflessCreatePlan["connector"] {
-  const bucketName = requiredText(input.config?.bucket_name, "S3 needs bucket name");
-  const prefix = typeof input.config?.prefix === "string" ? input.config.prefix.trim() : "";
+  const bucketName = requiredText(
+    input.config?.bucket_name,
+    "S3 needs access key, secret, bucket name, and at least one folder"
+  );
+  const prefixes = parseS3Prefixes(input.config);
+  if (prefixes.length === 0) {
+    throw new Error("S3 needs access key, secret, bucket name, and at least one folder");
+  }
+  if (prefixes.length > MAX_S3_SCOPES_PER_FLOW) {
+    throw new Error(`S3 allows at most ${MAX_S3_SCOPES_PER_FLOW} folders on one connector`);
+  }
   return {
     name: input.name,
     source: "s3",
@@ -542,7 +552,10 @@ function s3Connector(input: WizardConnectorInput, refresh: number): StafflessCre
     connector_specific_config: {
       bucket_name: bucketName,
       bucket_type: "s3",
-      prefix: prefix,
+      prefixes,
+      // First folder also stored as `prefix` so an engine that has not
+      // picked up `prefixes` yet indexes that folder instead of the bucket.
+      prefix: prefixes[0],
     },
   };
 }
