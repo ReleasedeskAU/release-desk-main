@@ -82,13 +82,10 @@ export function S3ScopeSummary({
 
   return (
     <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-      <h3 className="text-sm font-semibold text-gray-800">
-        {isEdit ? "New indexing scope" : scopes.length > 1 ? `Creating ${scopes.length} S3 connectors` : "Indexing scope"}
-      </h3>
-      {!isEdit && scopes.length > 1 ? (
+      <h3 className="text-sm font-semibold text-gray-800">Indexing scope</h3>
+      {scopes.length > 1 ? (
         <p className="text-xs text-gray-600">
-          Each folder becomes its own connector (one folder per connector), so it can sync, pause, and delete
-          independently. They appear as separate rows named e.g. “{s3ScopeDisplay(scopes[0] ?? "")}”.
+          These folders are stored on one connector — one credential, one sync, one pause.
         </p>
       ) : null}
       {isEdit && scopeChanged ? (

@@ -409,7 +409,7 @@ export function S3FolderBrowser({
           {selected.length > 0 ? (
             <div className="space-y-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
               <p className="text-xs font-semibold text-gray-700">
-                Selected ({selected.length}{single ? " — one folder per connector" : ""})
+                Selected ({selected.length})
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {selected.map((scope) => (

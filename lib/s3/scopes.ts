@@ -7,7 +7,7 @@
  * never a valid scope — there is no whole-bucket option.
  */
 
-/** Upper bound on connectors created from one onboarding flow. */
+/** Upper bound on folders stored on one S3 connector. */
 export const MAX_S3_SCOPES_PER_FLOW = 10;
 
 /** Folder scopes end in "/"; anything else is a flat-bucket filename pattern. */
@@ -25,19 +25,34 @@ export function s3ScopeDisplay(scope: string): string {
 }
 
 /**
- * Fan-out naming for N scopes from one flow: a single scope keeps the
- * tenant's display name untouched; multiple scopes get a suffix so each
- * connector row reads as "<name> — <scope>" (separate-rows decision).
+ * Folder list stored on one S3 connector. Prefers `prefixes`; falls back to
+ * the legacy single `prefix` so connectors created before the list field
+ * still edit correctly. Blank entries are dropped — the bucket root is
+ * never a scope.
  */
-export function s3FanoutName(baseName: string, scope: string, fanOut: boolean): string {
-  if (!fanOut) return baseName;
-  return `${baseName} (${s3ScopeDisplay(scope)})`;
+export function parseS3Prefixes(config: Record<string, unknown> | undefined): string[] {
+  const raw = config ?? {};
+  const fromList = Array.isArray(raw.prefixes)
+    ? raw.prefixes
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => normalizeStoredScope(item))
+        .filter(Boolean)
+    : [];
+  const unique: string[] = [];
+  const seen = new Set<string>();
+  for (const item of fromList) {
+    if (seen.has(item)) continue;
+    seen.add(item);
+    unique.push(item);
+  }
+  if (unique.length > 0) return unique;
+  const prefix = typeof raw.prefix === "string" ? normalizeStoredScope(raw.prefix) : "";
+  return prefix ? [prefix] : [];
 }
 
-/** Initial selection when editing: the connector's saved single prefix. */
+/** Initial selection when editing: saved `prefixes`, or the legacy single prefix. */
 export function initialS3Scopes(config: Record<string, unknown>): string[] {
-  const prefix = typeof config.prefix === "string" ? config.prefix.trim() : "";
-  return prefix ? [prefix] : [];
+  return parseS3Prefixes(config);
 }
 
 /**

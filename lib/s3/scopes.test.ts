@@ -7,7 +7,6 @@ import {
   normalizePatternInput,
   normalizeScopeInput,
   normalizeStoredScope,
-  s3FanoutName,
   s3ScopeDisplay,
 } from "./scopes";
 
@@ -17,12 +16,6 @@ describe("s3 scopes", () => {
     assert.equal(isFolderScope("invoice-2024-"), false);
     assert.equal(s3ScopeDisplay("releases/frontend/"), "releases/frontend");
     assert.equal(s3ScopeDisplay("invoice-2024-"), "invoice-2024-*");
-  });
-
-  it("names fan-out connectors with their scope only when fanning out", () => {
-    assert.equal(s3FanoutName("S3 releases", "releases/frontend/", false), "S3 releases");
-    assert.equal(s3FanoutName("S3 releases", "releases/frontend/", true), "S3 releases (releases/frontend)");
-    assert.equal(s3FanoutName("S3 invoices", "invoice-2024-", true), "S3 invoices (invoice-2024-*)");
   });
 
   it("rejects the whole bucket and wildcards in pasted paths", () => {
@@ -51,7 +44,16 @@ describe("s3 scopes", () => {
     assert.deepEqual(initialS3Scopes({}), []);
   });
 
-  it("caps fan-out per flow", () => {
+  it("prefers prefixes over the legacy single prefix", () => {
+    assert.deepEqual(initialS3Scopes({ prefixes: ["docs/", "images/"], prefix: "old/" }), [
+      "docs/",
+      "images/",
+    ]);
+    assert.deepEqual(initialS3Scopes({ prefixes: ["", "docs/"], prefix: "old/" }), ["docs/"]);
+    assert.deepEqual(initialS3Scopes({ prefixes: [], prefix: "legacy/" }), ["legacy/"]);
+  });
+
+  it("caps folders per connector", () => {
     assert.ok(MAX_S3_SCOPES_PER_FLOW <= 10);
   });
 });

@@ -406,6 +406,45 @@ describe("planStafflessCreate", () => {
     );
   });
 
+  it("stores S3 folders on one connector and keeps the first as prefix", () => {
+    const plan = planStafflessCreate({
+      name: "Files",
+      type: "s3",
+      credentials: { access_key_id: "AKIAEXAMPLE", secret_access_key: "secret" },
+      config: { bucket_name: "releases", prefixes: ["docs/", "images/"] },
+    });
+    assert.equal(plan.connector.source, "s3");
+    assert.deepEqual(plan.connector.connector_specific_config, {
+      bucket_name: "releases",
+      bucket_type: "s3",
+      prefixes: ["docs/", "images/"],
+      prefix: "docs/",
+    });
+    assert.equal(plan.credential.credential_json.aws_access_key_id, "AKIAEXAMPLE");
+    assert.equal(JSON.stringify(plan.connector).includes("secret"), false);
+  });
+
+  it("reads a legacy single S3 prefix and rejects an empty folder list", () => {
+    const plan = planStafflessCreate({
+      name: "Files",
+      type: "s3",
+      credentials: { access_key_id: "AKIAEXAMPLE", secret_access_key: "secret" },
+      config: { bucket_name: "releases", prefix: "docs/" },
+    });
+    assert.deepEqual(plan.connector.connector_specific_config.prefixes, ["docs/"]);
+    assert.equal(plan.connector.connector_specific_config.prefix, "docs/");
+    assert.throws(
+      () =>
+        planStafflessCreate({
+          name: "Files",
+          type: "s3",
+          credentials: { access_key_id: "AKIAEXAMPLE", secret_access_key: "secret" },
+          config: { bucket_name: "releases" },
+        }),
+      /at least one folder/
+    );
+  });
+
   it("does not invent an outlook StaffLess source", () => {
     assert.throws(
       () =>

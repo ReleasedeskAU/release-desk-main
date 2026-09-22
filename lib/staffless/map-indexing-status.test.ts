@@ -184,7 +184,34 @@ describe("mergeCcPairsWithIndexingStatus", () => {
     );
     assert.equal(rows[0].config?.bucket_name, "releases");
     assert.equal(rows[0].config?.prefix, "docs/");
+    assert.deepEqual(rows[0].config?.prefixes, ["docs/"]);
     assert.equal(JSON.stringify(rows[0]).includes("aws_secret"), false);
+  });
+
+  it("maps an S3 prefixes list onto the wizard config", () => {
+    const rows = mergeCcPairsWithIndexingStatus(
+      [
+        {
+          cc_pair_id: 4,
+          name: "Files",
+          connector: {
+            id: 11,
+            name: "Files",
+            source: "s3",
+            credential_ids: [3],
+            connector_specific_config: {
+              bucket_name: "releases",
+              bucket_type: "s3",
+              prefixes: ["docs/", "images/"],
+              prefix: "docs/",
+            },
+          },
+        },
+      ],
+      []
+    );
+    assert.deepEqual(rows[0].config?.prefixes, ["docs/", "images/"]);
+    assert.equal(rows[0].config?.prefix, "docs/");
   });
 
   it("maps GitHub include flags onto wizard dataTypes", () => {
