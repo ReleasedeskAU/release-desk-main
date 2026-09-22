@@ -281,4 +281,93 @@ describe("scoreAskEvalTurn", () => {
     assert.equal(viaCatalog.outcome, "pass");
     assert.equal(viaCatalog.reason, "catalog_children_parity");
   });
+
+  it("passes SCHEDULED_TEAMS_CONF on one source=all search citing both sources", () => {
+    const rows = JSON.stringify({
+      documents: [
+        { title: "Release 36.2 schedule", source: "Microsoft Teams", link: "https://teams.test/t1" },
+        { title: "36.2 test plan", source: "confluence", link: "https://conf.test/c1" },
+      ],
+    });
+    for (const id of ["SCHEDULED_TEAMS_CONF", "SCHEDULED_TEAMS_CONF_TYPO"] as const) {
+      const scored = scoreAskEvalTurn(
+        id,
+        "Release 36.2 is scheduled per Release 36.2 schedule and the 36.2 test plan.",
+        [call("search_indexed_documents", { query: "when release 36.2 is scheduled", source: "all" }, rows)]
+      );
+      assert.equal(scored.outcome, "pass");
+      assert.equal(scored.reason, "scheduled_teams_conf");
+    }
+  });
+
+  it("fails SCHEDULED_TEAMS_CONF on catalog detours and named-source searches", () => {
+    const rows = JSON.stringify({
+      documents: [{ title: "Release 36.2 schedule", source: "teams", link: "https://teams.test/t1" }],
+    });
+    const detour = scoreAskEvalTurn("SCHEDULED_TEAMS_CONF", "Release 36.2 is scheduled.", [
+      call("search_indexed_documents", { query: "release 36.2", source: "all" }, rows),
+      call("get_verified_count", { source: "jira", filter_field: "labels", filter_value: "release-36.2" }),
+    ]);
+    assert.equal(detour.outcome, "fail");
+    assert.equal(detour.reason, "catalog_detour");
+    const named = scoreAskEvalTurn("SCHEDULED_TEAMS_CONF", "Release 36.2 is scheduled.", [
+      call("search_indexed_documents", { query: "release 36.2", source: "jira" }, rows),
+    ]);
+    assert.equal(named.outcome, "fail");
+    assert.equal(named.reason, "not_source_all_search");
+  });
+
+  it("fails SCHEDULED_TEAMS_CONF on deferral and uncited rows", () => {
+    const both = JSON.stringify({
+      documents: [
+        { title: "Release 36.2 schedule", source: "teams", link: "https://teams.test/t1" },
+        { title: "36.2 test plan", source: "confluence", link: "https://conf.test/c1" },
+      ],
+    });
+    const deferred = scoreAskEvalTurn(
+      "SCHEDULED_TEAMS_CONF",
+      "Which connector should I search for the release schedule?",
+      [call("search_indexed_documents", { query: "release 36.2", source: "all" }, both)]
+    );
+    assert.equal(deferred.outcome, "fail");
+    assert.equal(deferred.reason, "clarifying_deferral");
+    // Live shape is Teams+Jira rows with the Teams schedule row cited.
+    const live = JSON.stringify({
+      documents: [
+        { title: "Release 36.2 schedule", source: "Microsoft Teams", link: "https://teams.test/t1" },
+        { title: "3. Test data", source: "Jira", link: "https://jira.test/BN-1" },
+      ],
+    });
+    const livePass = scoreAskEvalTurn(
+      "SCHEDULED_TEAMS_CONF",
+      "Release 36.2 is scheduled Wednesday per Release 36.2 schedule.",
+      [call("search_indexed_documents", { query: "release 36.2", source: "all" }, live)]
+    );
+    assert.equal(livePass.outcome, "pass");
+    // Confluence rows present but ignored is still a failure.
+    const uncited = scoreAskEvalTurn(
+      "SCHEDULED_TEAMS_CONF_TYPO",
+      "Release 36.2 is scheduled per Release 36.2 schedule.",
+      [call("search_indexed_documents", { query: "release 36.2", source: "all" }, both)]
+    );
+    assert.equal(uncited.outcome, "fail");
+    assert.equal(uncited.reason, "single_source_citation");
+  });
+
+  it("allows a body read of an already-found schedule row", () => {
+    const rows = JSON.stringify({
+      documents: [
+        { title: "Release 36.2 schedule", source: "teams", document_id: "teams-doc-1" },
+      ],
+    });
+    const scored = scoreAskEvalTurn(
+      "SCHEDULED_TEAMS_CONF_TYPO",
+      "Release 36.2 is scheduled Wednesday per Release 36.2 schedule.",
+      [
+        call("search_indexed_documents", { query: "release 36.2", source: "all" }, rows),
+        call("get_document_content", { document_id: "teams-doc-1" }, JSON.stringify({ found: true })),
+      ]
+    );
+    assert.equal(scored.outcome, "pass");
+  });
 });

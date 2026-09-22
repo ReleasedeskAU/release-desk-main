@@ -30,4 +30,21 @@ describe("ask-eval cases", () => {
     );
     assert.throws(() => selectAskEvalCases(["NOPE"]));
   });
+
+  it("includes both scheduled phrasings with dual-source gates", () => {
+    const rows = selectAskEvalCases(["SCHEDULED_TEAMS_CONF", "SCHEDULED_TEAMS_CONF_TYPO"]);
+    assert.deepEqual(
+      rows.map((r) => r.question),
+      ["when release 36.2 is scheduled ?", "tell when release 36.2 is schedules"]
+    );
+    assert.ok(rows.every((r) => r.requiresSource === "teams" && r.alsoRequiresSource === "confluence"));
+    assert.equal(
+      skipReasonForSource("confluence", [{ id: "teams", label: "Teams", docsIndexed: 4 }]),
+      "source_missing:confluence"
+    );
+    assert.equal(
+      skipReasonForSource("confluence", [{ id: "confluence", label: "Confluence", docsIndexed: 9 }]),
+      null
+    );
+  });
 });

@@ -18,14 +18,18 @@ export type AskEvalCaseId =
   | "LATEST_MESSAGE"
   | "GRAPH_BLOCKERS"
   | "GRAPH_CLOSURE"
-  | "GRAPH_CHILDREN";
+  | "GRAPH_CHILDREN"
+  | "SCHEDULED_TEAMS_CONF"
+  | "SCHEDULED_TEAMS_CONF_TYPO";
 
 export type AskEvalOutcome = "pass" | "fail" | "infra" | "skip";
 
 export type AskEvalCase = {
   id: AskEvalCaseId;
   question: string;
-  requiresSource: "github" | "slack" | "jira";
+  requiresSource: "github" | "slack" | "jira" | "teams" | "confluence";
+  /** Second source that must also be indexed (multi-source cases). */
+  alsoRequiresSource?: "github" | "slack" | "jira" | "teams" | "confluence";
 };
 
 export type AskEvalScore = {

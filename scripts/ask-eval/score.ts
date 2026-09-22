@@ -54,6 +54,9 @@ export function scoreAskEvalTurn(
       return scoreGraphClosure(text, calls);
     case "GRAPH_CHILDREN":
       return scoreGraphChildren(text, calls);
+    case "SCHEDULED_TEAMS_CONF":
+    case "SCHEDULED_TEAMS_CONF_TYPO":
+      return scoreScheduled(text, calls);
     default:
       return { outcome: "fail", reason: "unknown_case" };
   }
@@ -419,4 +422,74 @@ function scoreGraphChildren(text: string, calls: readonly AskToolTraceCall[]): A
   if (!viaGraph && !viaCatalog) return { outcome: "fail", reason: "no_children_path" };
   void text;
   return { outcome: "pass", reason: viaGraph ? "graph_children" : "catalog_children_parity" };
+}
+
+/**
+ * "When is X scheduled" must be content search with source=all ??? no catalog
+ * detour, no clarifying deferral. The schedule row (Teams) must be cited;
+ * Confluence rows must be cited when the sample contains them. Body reads of
+ * already-found rows are search-family grounding, not a detour.
+ */
+const SCHEDULED_CATALOG_TOOLS = new Set([
+  "get_verified_count",
+  "get_breakdown_by_field",
+  "list_distinct_values",
+  "get_document_by_key",
+  "list_documents_matching",
+  "list_queryable_fields",
+  "get_linked_work_items",
+  "get_dependency_closure",
+]);
+
+const SCHEDULED_DEFERRAL = /which (connector|source)s?\b|do you want me to (search|check)|could you (clarify|specify)/i;
+
+type ScheduledRow = { source?: unknown; title?: unknown; link?: unknown; document_id?: unknown };
+
+function isTeamsRow(source: unknown): boolean {
+  const s = String(source ?? "").toLowerCase();
+  return s === "teams" || s === "microsoft teams";
+}
+
+function isConfluenceRow(source: unknown): boolean {
+  return String(source ?? "").toLowerCase().includes("confluence");
+}
+
+function scheduledSearchRows(calls: readonly AskToolTraceCall[]): ScheduledRow[] {
+  const out: ScheduledRow[] = [];
+  for (const call of calls) {
+    if (call.name !== "search_indexed_documents") continue;
+    try {
+      const payload = JSON.parse(call.result) as { documents?: ScheduledRow[] };
+      if (Array.isArray(payload.documents)) out.push(...payload.documents);
+    } catch {
+      continue;
+    }
+  }
+  return out;
+}
+
+function scoreScheduled(text: string, calls: readonly AskToolTraceCall[]): AskEvalScore {
+  const detour = calls.find((c) => SCHEDULED_CATALOG_TOOLS.has(c.name));
+  if (detour) return { outcome: "fail", reason: "catalog_detour" };
+  const searches = argsOf(calls, "search_indexed_documents");
+  if (searches.length === 0) return { outcome: "fail", reason: "no_search" };
+  const allSource = searches.some((a) => {
+    const source = String(a.source ?? "all").toLowerCase();
+    return source === "all" || source === "";
+  });
+  if (!allSource) return { outcome: "fail", reason: "not_source_all_search" };
+  if (SCHEDULED_DEFERRAL.test(text)) return { outcome: "fail", reason: "clarifying_deferral" };
+  const rows = scheduledSearchRows(calls);
+  const teams = rows.filter((r) => isTeamsRow(r.source));
+  const conf = rows.filter((r) => isConfluenceRow(r.source));
+  // The schedule answer lives in the Teams row ??? it must be cited. Confluence
+  // rows are cited only when the sample actually contains them; a Teams+Jira
+  // sample with a Teams citation is the verified live shape, not a failure.
+  if (!teams.some((r) => answerCitesListRow(text, r))) {
+    return { outcome: "fail", reason: "single_source_citation" };
+  }
+  if (conf.length > 0 && !conf.some((r) => answerCitesListRow(text, r))) {
+    return { outcome: "fail", reason: "single_source_citation" };
+  }
+  return { outcome: "pass", reason: "scheduled_teams_conf" };
 }

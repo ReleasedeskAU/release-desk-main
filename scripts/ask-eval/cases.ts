@@ -44,6 +44,18 @@ export const ASK_EVAL_CASES: AskEvalCase[] = [
     question: "What are the children of BN-15?",
     requiresSource: "jira",
   },
+  {
+    id: "SCHEDULED_TEAMS_CONF",
+    question: "when release 36.2 is scheduled ?",
+    requiresSource: "teams",
+    alsoRequiresSource: "confluence",
+  },
+  {
+    id: "SCHEDULED_TEAMS_CONF_TYPO",
+    question: "tell when release 36.2 is schedules",
+    requiresSource: "teams",
+    alsoRequiresSource: "confluence",
+  },
 ];
 
 /**
