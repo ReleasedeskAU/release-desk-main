@@ -28,19 +28,23 @@ export function S3ScopeSummary({
   accessKeyId,
   secretAccessKey,
   bucket,
+  connectorId,
   scopes,
   isEdit,
+  scopeChanged,
 }: {
   accessKeyId: string;
   secretAccessKey: string;
   bucket: string;
+  connectorId?: string | null;
   scopes: string[];
   isEdit: boolean;
+  scopeChanged?: boolean;
 }) {
   const [previews, setPreviews] = useState<ScopePreview[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const key = scopes.join("\n");
-  const canPreview = Boolean(accessKeyId && secretAccessKey && bucket && scopes.length > 0);
+  const canPreview = Boolean((connectorId || (accessKeyId && secretAccessKey && bucket)) && scopes.length > 0);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,7 +56,11 @@ export function S3ScopeSummary({
         const res = await fetch("/api/connectors/s3/browse", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ accessKeyId, secretAccessKey, bucket, preview: true, prefixes: scopes }),
+          body: JSON.stringify(
+          connectorId
+            ? { connectorId, preview: true, prefixes: scopes }
+            : { accessKeyId, secretAccessKey, bucket, preview: true, prefixes: scopes }
+        ),
         });
         const body = (await res.json().catch(() => ({}))) as { previews?: ScopePreview[]; error?: string };
         if (cancelled) return;
@@ -83,9 +91,9 @@ export function S3ScopeSummary({
           independently. They appear as separate rows named e.g. “{s3ScopeDisplay(scopes[0] ?? "")}”.
         </p>
       ) : null}
-      {isEdit ? (
+      {isEdit && scopeChanged ? (
         <p className="text-xs font-semibold text-amber-900">
-          Changing the folder scope removes the previously indexed files and re-indexes from the start on save.
+          Saving this scope change removes previously indexed items that are no longer in scope and re-indexes from the start.
         </p>
       ) : null}
       {error ? <p className="text-sm text-red-700">{error}</p> : null}

@@ -224,7 +224,6 @@ export const ADMIN_CONNECTOR_SOURCES: AdminConnectorSource[] = [
     password("teams_client_secret", "Client secret"),
     text("teams_directory_id", "Directory (tenant) ID"),
   ], [
-    list("teams", "Team names", { help: "Leave empty to index every team." }),
     text("authority_host", "Authority host", { optional: true }),
     text("graph_api_host", "Graph API host", { optional: true }),
   ]),

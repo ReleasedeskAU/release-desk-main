@@ -121,7 +121,7 @@ export const CONNECTOR_TYPES: ConnectorTypeDef[] = [
     available: true,
     defaultPollInterval: 15,
     setupHint:
-      "Register an Azure AD (Microsoft Entra ID) app and grant Microsoft Graph application permissions with admin consent so the app can read Teams, channels, and channel messages. Then enter the Application (client) ID, Directory (tenant) ID, and a client secret. StaffLess uses those three values — there is no OAuth click-through in this wizard.",
+      "Register an Azure AD (Microsoft Entra ID) app and grant Microsoft Graph application permission Team.ReadBasic.All (plus channel and message read) with admin consent. Enter the Application (client) ID, Directory (tenant) ID, and a client secret. The next step loads the teams this app can access — pick at least one. There is no OAuth click-through and no whole-tenant option.",
     credentialFields: [
       {
         key: "teams_client_id",
@@ -137,16 +137,7 @@ export const CONNECTOR_TYPES: ConnectorTypeDef[] = [
         placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
       },
     ],
-    configFields: [
-      {
-        key: "teamNames",
-        label: "Team names",
-        type: "text",
-        placeholder: "Support, Engineering",
-        optional: true,
-        help: "Comma-separated display names. Leave blank to index every Team the app can access.",
-      },
-    ],
+    configFields: [],
     targetModel: "WorkItem",
   },
   {

@@ -12,6 +12,7 @@ import { allowedSenderValues } from "@/lib/imap/allowed-senders";
 import { parseImapMailboxNames } from "@/lib/imap/mailboxes";
 import { isJiraAllProjects, jiraProjectInJql, parseJiraProjectKeys } from "@/lib/jira/project-keys";
 import { parseSlackChannelNames } from "@/lib/slack/fetch-channels";
+import { parseTeamNames } from "@/lib/teams/fetch-teams";
 
 export type WizardConnectorInput = {
   name: string;
@@ -424,6 +425,11 @@ function slackPlan(input: WizardCreateInput, refresh: number): StafflessCreatePl
 }
 
 function teamsConnector(input: WizardConnectorInput, refresh: number): StafflessCreatePlan["connector"] {
+  // Blank is refused. The indexer treats an empty list as every team the app can see.
+  const teams = parseTeamNames(input.config?.teams ?? input.config?.teamNames);
+  if (teams.length === 0) {
+    throw new Error("Teams needs client ID, client secret, directory ID, and at least one team");
+  }
   return {
     name: input.name,
     source: "teams",
@@ -432,7 +438,7 @@ function teamsConnector(input: WizardConnectorInput, refresh: number): Staffless
     groups: [],
     refresh_freq: refresh,
     connector_specific_config: {
-      teams: commaList(input.config?.teamNames),
+      teams,
     },
   };
 }

@@ -165,6 +165,28 @@ describe("mergeCcPairsWithIndexingStatus", () => {
     assert.equal(rows[0].status, "PENDING");
   });
 
+  it("maps an S3 bucket and prefix onto the wizard config", () => {
+    const rows = mergeCcPairsWithIndexingStatus(
+      [
+        {
+          cc_pair_id: 4,
+          name: "Files",
+          connector: {
+            id: 11,
+            name: "Files",
+            source: "s3",
+            credential_ids: [3],
+            connector_specific_config: { bucket_name: "releases", bucket_type: "s3", prefix: "docs/" },
+          },
+        },
+      ],
+      []
+    );
+    assert.equal(rows[0].config?.bucket_name, "releases");
+    assert.equal(rows[0].config?.prefix, "docs/");
+    assert.equal(JSON.stringify(rows[0]).includes("aws_secret"), false);
+  });
+
   it("maps GitHub include flags onto wizard dataTypes", () => {
     const rows = mergeCcPairsWithIndexingStatus(
       [

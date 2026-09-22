@@ -32,6 +32,7 @@ export function S3FolderBrowser({
   accessKeyId,
   secretAccessKey,
   bucket,
+  connectorId,
   selected,
   onToggleScope,
   canBrowse,
@@ -40,6 +41,7 @@ export function S3FolderBrowser({
   accessKeyId: string;
   secretAccessKey: string;
   bucket: string;
+  connectorId?: string | null;
   selected: string[];
   onToggleScope: (scope: string, checked: boolean) => void;
   canBrowse: boolean;
@@ -64,13 +66,11 @@ export function S3FolderBrowser({
       const res = await fetch("/api/connectors/s3/browse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          accessKeyId,
-          secretAccessKey,
-          bucket,
-          prefix: targetPrefix,
-          continuationToken: token,
-        }),
+        body: JSON.stringify(
+          connectorId
+            ? { connectorId, prefix: targetPrefix, continuationToken: token }
+            : { accessKeyId, secretAccessKey, bucket, prefix: targetPrefix, continuationToken: token }
+        ),
       });
       const body = (await res.json().catch(() => ({}))) as {
         page?: LevelState;
@@ -84,7 +84,7 @@ export function S3FolderBrowser({
       if (!body.page) throw new Error("Browse returned no data");
       return body.page;
     },
-    [accessKeyId, secretAccessKey, bucket]
+    [accessKeyId, secretAccessKey, bucket, connectorId]
   );
 
   const loadLevel = useCallback(

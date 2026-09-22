@@ -5,8 +5,16 @@ import { requireRole } from "@/lib/auth/api";
 import { fetchSlackChannels } from "@/lib/slack/fetch-channels";
 import { SlackProbeError } from "@/lib/slack/probe";
 import { logger } from "@/lib/logger";
+import {
+  requiredCredentialField,
+  resolveStoredConnector,
+  sanitizeListResponse,
+  StoredCredentialError,
+} from "@/lib/staffless/unmasked-credential";
 
-const bodySchema = z.object({ token: z.string().trim().min(1).max(500) }).strict();
+const pastedSchema = z.object({ token: z.string().trim().min(1).max(500) }).strict();
+const storedSchema = z.object({ connectorId: z.string().regex(/^\d+$/) }).strict();
+const bodySchema = z.union([storedSchema, pastedSchema]);
 
 const lastCallByTokenHash = new Map<string, number>();
 const COOLDOWN_MS = 5_000;
@@ -25,20 +33,38 @@ export async function POST(req: Request) {
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json({ error: "Slack bot token is required" }, { status: 400 });
+    return NextResponse.json({ error: "Slack bot token or a connector id is required" }, { status: 400 });
+  }
+
+  let token: string;
+  let cooldown: string;
+  try {
+    if ("connectorId" in parsed.data) {
+      const stored = await resolveStoredConnector(parsed.data.connectorId, "slack");
+      token = requiredCredentialField(stored.credentialJson, "slack_bot_token");
+      cooldown = `connector:${parsed.data.connectorId}`;
+    } else {
+      token = parsed.data.token;
+      cooldown = tokenHash(token);
+    }
+  } catch (err) {
+    if (err instanceof StoredCredentialError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    logger.error("api/connectors/slack/channels", { kind: err instanceof Error ? err.name : "unknown" });
+    return NextResponse.json({ error: "Stored credential is unavailable" }, { status: 502 });
   }
 
   const now = Date.now();
-  const key = tokenHash(parsed.data.token);
-  const last = lastCallByTokenHash.get(key) ?? 0;
+  const last = lastCallByTokenHash.get(cooldown) ?? 0;
   if (now - last < COOLDOWN_MS) {
     return NextResponse.json({ error: "Please wait a few seconds before listing channels again" }, { status: 429 });
   }
-  lastCallByTokenHash.set(key, now);
+  lastCallByTokenHash.set(cooldown, now);
 
   try {
-    const channels = await fetchSlackChannels(parsed.data.token);
-    return NextResponse.json({ channels });
+    const channels = await fetchSlackChannels(token);
+    return NextResponse.json(sanitizeListResponse({ channels }));
   } catch (err) {
     if (err instanceof SlackProbeError) {
       logger.warn("api/connectors/slack/channels", { status: err.status });

@@ -129,6 +129,22 @@ describe("planCatalogCreate", () => {
     );
   });
 
+  it("rejects catalog Teams create so an empty config cannot index every team", () => {
+    assert.throws(
+      () =>
+        planCatalogCreate({
+          name: "Teams RD",
+          source: "teams",
+          credentials: {
+            teams_client_id: "id",
+            teams_client_secret: "secret",
+            teams_directory_id: "tid",
+          },
+        }),
+      /connector wizard/
+    );
+  });
+
   it("rejects unknown source and empty name", () => {
     assert.throws(() => planCatalogCreate({ name: "X", source: "not_a_source" }), /Unknown connector source/);
     assert.throws(() => planCatalogCreate({ name: "  ", source: "slack" }), /Name is required/);

@@ -14,8 +14,14 @@ import {
   type S3ScopePreview,
 } from "@/lib/s3/browse";
 import { normalizeStoredScope } from "@/lib/s3/scopes";
+import {
+  requiredCredentialField,
+  resolveStoredConnector,
+  sanitizeListResponse,
+  StoredCredentialError,
+} from "@/lib/staffless/unmasked-credential";
 
-const bodySchema = z
+const pastedSchema = z
   .object({
     accessKeyId: z.string().trim().min(1).max(256),
     secretAccessKey: z.string().min(1).max(500),
@@ -31,6 +37,22 @@ const bodySchema = z
     message: "Bulk preview and paging cannot be combined",
   });
 
+const storedSchema = z
+  .object({
+    connectorId: z.string().regex(/^\d+$/),
+    prefix: z.string().max(1024).optional(),
+    prefixes: z.array(z.string().max(1024)).max(10).optional(),
+    continuationToken: z.string().max(4096).optional(),
+    region: z.string().trim().min(1).max(32).optional(),
+    preview: z.boolean().optional(),
+  })
+  .strict()
+  .refine((v) => !(v.prefixes && v.continuationToken), {
+    message: "Bulk preview and paging cannot be combined",
+  });
+
+const bodySchema = z.union([storedSchema, pastedSchema]);
+
 const lastCallByKey = new Map<string, number>();
 const COOLDOWN_MS = 5_000;
 
@@ -40,8 +62,9 @@ function cooldownKey(accessKeyId: string, bucket: string): string {
 
 /**
  * Browse one level of an S3 bucket (or preview a scope) for the connector
- * wizard. Talks to S3 directly with wizard-supplied credentials, not to
- * StaffLess. Credentials are never logged and never stored.
+ * wizard. Create sends access key, secret, and bucket. Edit sends connectorId
+ * only — the server loads the stored key and bucket, and the secret is not
+ * returned. Credentials are never logged.
  *
  * POST { accessKeyId, secretAccessKey, bucket, prefix?, continuationToken?,
  *        region?, preview?, prefixes? } ->
@@ -58,9 +81,35 @@ export async function POST(req: Request) {
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json({ error: "Access key, secret, and bucket are required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Access key, secret, and bucket are required, or a connector id for an existing connector" },
+      { status: 400 }
+    );
   }
-  const { accessKeyId, secretAccessKey, bucket } = parsed.data;
+
+  let accessKeyId: string;
+  let secretAccessKey: string;
+  let bucket: string;
+  try {
+    if ("connectorId" in parsed.data) {
+      const stored = await resolveStoredConnector(parsed.data.connectorId, "s3");
+      accessKeyId = requiredCredentialField(stored.credentialJson, "aws_access_key_id");
+      secretAccessKey = requiredCredentialField(stored.credentialJson, "aws_secret_access_key");
+      bucket = typeof stored.config.bucket_name === "string" ? stored.config.bucket_name.trim() : "";
+      if (!bucket) throw new StoredCredentialError("Stored credential is unavailable", 502);
+    } else {
+      accessKeyId = parsed.data.accessKeyId;
+      secretAccessKey = parsed.data.secretAccessKey;
+      bucket = parsed.data.bucket;
+    }
+  } catch (err) {
+    if (err instanceof StoredCredentialError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    logger.error("api/connectors/s3/browse", { kind: err instanceof Error ? err.name : "unknown" });
+    return NextResponse.json({ error: "Stored credential is unavailable" }, { status: 502 });
+  }
+
   const prefix = normalizeS3Prefix(parsed.data.prefix ?? "");
 
   const now = Date.now();
@@ -99,14 +148,14 @@ export async function POST(req: Request) {
         for (const scope of previewScopes) {
           previews.push(await previewS3Scope(client, bucket, scope));
         }
-        return NextResponse.json({ previews });
+        return NextResponse.json(sanitizeListResponse({ previews }));
       }
       if (parsed.data.preview === true) {
         const preview = await previewS3Scope(client, bucket, prefix);
-        return NextResponse.json({ preview });
+        return NextResponse.json(sanitizeListResponse({ preview }));
       }
       const page = await listS3Level(client, bucket, prefix, parsed.data.continuationToken);
-      return NextResponse.json({ page });
+      return NextResponse.json(sanitizeListResponse({ page }));
     } catch (err) {
       const redirect =
         !parsed.data.region && err instanceof S3BrowseError ? err.redirectRegion : undefined;

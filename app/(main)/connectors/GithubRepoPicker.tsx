@@ -110,6 +110,7 @@ export function GithubRepoPicker({
                   />
                   <span className="font-semibold">{repo.fullName}</span>
                   {repo.private ? <span className="text-xs text-gray-500">Private</span> : null}
+                  {repo.detail ? <span className="text-xs text-gray-500">{repo.detail}</span> : null}
                 </label>
               ))}
               {selectedNotInList.map((fullName) => (

@@ -140,6 +140,10 @@ export function planCatalogCreate(input: CatalogCreateInput): CatalogCreatePlan 
   if (!isCatalogSourceReady(source) || source.id === "xenforo") {
     throw new CatalogCreateError("This source cannot be added yet");
   }
+  // Teams scope is the guided picker. An empty catalog config would index every team.
+  if (sourceId === "teams") {
+    throw new CatalogCreateError("Choose Microsoft Teams in the connector wizard");
+  }
 
   const indexingStart = parseOptionalIndexingStart(input.indexingStart);
   if (indexingStart === false) {

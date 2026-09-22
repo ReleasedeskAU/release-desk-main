@@ -290,6 +290,12 @@ export function mapConnectorToTableRow(
       ...(mailboxes ? { mailboxes } : {}),
       ...(allowedSenders ? { allowedSenders } : {}),
       ...(slackChannels.length > 0 ? { channels: slackChannels } : {}),
+      ...(type === "s3" && typeof cfg.bucket_name === "string" && cfg.bucket_name.trim()
+        ? { bucket_name: cfg.bucket_name.trim() }
+        : {}),
+      ...(type === "s3" && typeof cfg.prefix === "string" && cfg.prefix.trim()
+        ? { prefix: cfg.prefix.trim() }
+        : {}),
       ...(dataTypes ? { dataTypes } : {}),
     },
     pollInterval: connector.refresh_freq ? Math.max(1, Math.round(connector.refresh_freq / 60)) : 15,

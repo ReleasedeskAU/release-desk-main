@@ -21,6 +21,7 @@ import type { ImapFolderOption } from "@/lib/imap/mailboxes";
 import type { GithubRepoOption } from "@/lib/github/projects";
 import { localWizardFieldCheckError } from "@/lib/connectors/wizard-field-check";
 import { savedSlackChannelOptions, type SlackChannelOption } from "@/lib/slack/fetch-channels";
+import { parseTeamNames, savedTeamOptions, type TeamOption } from "@/lib/teams/fetch-teams";
 import type { JiraProjectOption } from "@/lib/jira/projects";
 import type { ConnectorTableRow } from "@/lib/staffless/map-indexing-status";
 import { ConnectorTypeIcon } from "./ConnectorTypeIcon";
@@ -30,6 +31,15 @@ import { JiraProjectPicker } from "./JiraProjectPicker";
 import { S3FolderBrowser } from "./S3FolderBrowser";
 import { S3ScopeSummary } from "./S3ScopeSummary";
 import { initialS3Scopes, MAX_S3_SCOPES_PER_FLOW, s3FanoutName } from "@/lib/s3/scopes";
+import { selectionChanged } from "@/lib/connectors/scope-edit";
+
+const SCOPE_REINDEX_NOTICE =
+  "Saving this scope change removes previously indexed items that are no longer in scope and re-indexes from the start.";
+
+function ScopeReindexNotice({ show }: { show: boolean }) {
+  if (!show) return null;
+  return <p className="text-xs font-semibold text-amber-900">{SCOPE_REINDEX_NOTICE}</p>;
+}
 
 function typeLabel(type: string): string {
   return getConnectorTypeDef(type)?.label ?? type;
@@ -75,6 +85,10 @@ function initialBitbucketRepos(config: Record<string, unknown>): string[] {
       .map((slug) => (slug.includes("/") ? slug : `${workspace}/${slug}`));
   }
   return [];
+}
+
+function initialTeamNames(config: Record<string, unknown>): string[] {
+  return parseTeamNames(config.teams ?? config.teamNames);
 }
 
 function initialSlackChannels(config: Record<string, unknown>): string[] {
@@ -233,6 +247,12 @@ export function ConnectorWizard({
   const [selectedSlackChannels, setSelectedSlackChannels] = useState<string[]>(() =>
     initialSlackChannels(existingConfig)
   );
+  const [teams, setTeams] = useState<TeamOption[]>(() => savedTeamOptions(initialTeamNames(existingConfig)));
+  const [teamsLoading, setTeamsLoading] = useState(false);
+  const [teamsError, setTeamsError] = useState<string | null>(null);
+  const [teamsListAttempted, setTeamsListAttempted] = useState(false);
+  const [teamsFilter, setTeamsFilter] = useState("");
+  const [selectedTeams, setSelectedTeams] = useState<string[]>(() => initialTeamNames(existingConfig));
   const [selectedS3Scopes, setSelectedS3Scopes] = useState<string[]>(() =>
     existingConnector?.type === "s3" ? initialS3Scopes(existingConfig) : []
   );
@@ -246,7 +266,9 @@ export function ConnectorWizard({
   const isImap = typeDef?.id === "imap";
   const isSlack = typeDef?.id === "slack";
   const isS3 = typeDef?.id === "s3";
-  const hasSourcePicker = isJira || isGitHub || isGitlab || isBitbucket || isImap || isSlack || isS3;
+  const isTeams = typeDef?.id === "teams";
+  const storedConnectorId = isEdit && !replaceCredentials && existingConnector ? existingConnector.id : null;
+  const hasSourcePicker = isJira || isGitHub || isGitlab || isBitbucket || isImap || isSlack || isS3 || isTeams;
   const dataTypeOptions = selectedType ? CONNECTOR_DATA_TYPES[selectedType] ?? [] : [];
   const totalSteps = hasSourcePicker ? 4 : 3;
 
@@ -303,8 +325,90 @@ export function ConnectorWizard({
     imapSenderCount >= 0 &&
     (mailboxKind !== "personal" || imapSenderCount > 0);
   const canProceedSlackChannels = selectedSlackChannels.length > 0;
+  const canProceedTeams = selectedTeams.length > 0;
   const canProceedS3Scopes =
     selectedS3Scopes.length > 0 && selectedS3Scopes.length <= MAX_S3_SCOPES_PER_FLOW;
+  const scopeDirty = useMemo(() => {
+    if (!isEdit) return false;
+    if (isJira) {
+      return selectionChanged(
+        { keys: initialJiraKeys(existingConfig), all: existingConfig.allProjects === true },
+        { keys: selectedJiraKeys, all: allJiraProjects }
+      );
+    }
+    if (isGitHub) {
+      return selectionChanged(
+        { keys: initialGithubRepos(existingConfig), all: existingConfig.allRepos === true },
+        { keys: selectedGithubRepos, all: allGithubRepos }
+      );
+    }
+    if (isGitlab) {
+      return selectionChanged(
+        { keys: initialGitlabProjects(existingConfig) },
+        { keys: selectedGitlabProjects }
+      );
+    }
+    if (isBitbucket) {
+      return selectionChanged(
+        {
+          keys: initialBitbucketRepos(existingConfig),
+          all: existingConfig.allRepos === true && existingConnector?.type === "bitbucket",
+        },
+        { keys: selectedBitbucketRepos, all: allBitbucketRepos }
+      );
+    }
+    if (isImap) {
+      return (
+        selectionChanged({ keys: initialImapFolders(existingConfig) }, { keys: selectedImapFolders }) ||
+        selectionChanged(
+          { keys: initialImapAllowedSenders(existingConfig).split(/\n+/) },
+          { keys: imapAllowedSenders.split(/\n+/) }
+        )
+      );
+    }
+    if (isSlack) {
+      return selectionChanged(
+        { keys: initialSlackChannels(existingConfig) },
+        { keys: selectedSlackChannels }
+      );
+    }
+    if (isS3) {
+      const savedBucket = typeof existingConfig.bucket_name === "string" ? existingConfig.bucket_name : "";
+      return (
+        selectionChanged({ keys: initialS3Scopes(existingConfig) }, { keys: selectedS3Scopes }) ||
+        savedBucket.trim() !== (config.bucket_name ?? "").trim()
+      );
+    }
+    if (isTeams) {
+      return selectionChanged({ keys: initialTeamNames(existingConfig) }, { keys: selectedTeams });
+    }
+    return false;
+  }, [
+    isEdit,
+    isJira,
+    isGitHub,
+    isGitlab,
+    isBitbucket,
+    isImap,
+    isSlack,
+    isS3,
+    isTeams,
+    existingConfig,
+    existingConnector?.type,
+    selectedJiraKeys,
+    allJiraProjects,
+    selectedGithubRepos,
+    allGithubRepos,
+    selectedGitlabProjects,
+    selectedBitbucketRepos,
+    allBitbucketRepos,
+    selectedImapFolders,
+    imapAllowedSenders,
+    selectedSlackChannels,
+    selectedS3Scopes,
+    selectedTeams,
+    config.bucket_name,
+  ]);
 
   const toggleS3Scope = (scope: string, checked: boolean) => {
     setS3Error(null);
@@ -344,6 +448,7 @@ export function ConnectorWizard({
         setFieldCheck({ ok: true, message: "Saved credentials will be kept. StaffLess verifies them on Sync Now." });
         return;
       }
+      // Teams placeholder: Check fields runs before the picker. Save still requires a real team.
       const res = await fetch("/api/connectors/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -364,7 +469,9 @@ export function ConnectorWizard({
                     ? { ...config, mailboxes: ["INBOX"] }
                     : isSlack
                       ? { channels: ["general"] }
-                      : { ...config, dataTypes },
+                      : isTeams
+                        ? { teams: ["field-check"] }
+                        : { ...config, dataTypes },
         }),
       });
       const body = (await res.json()) as { ok?: boolean; message?: string; error?: string };
@@ -389,11 +496,11 @@ export function ConnectorWizard({
       const res = await fetch("/api/connectors/jira/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          baseUrl,
-          email: credentials.email,
-          apiToken: credentials.apiToken,
-        }),
+        body: JSON.stringify(
+          storedConnectorId
+            ? { connectorId: storedConnectorId }
+            : { baseUrl, email: credentials.email, apiToken: credentials.apiToken }
+        ),
       });
       const body = (await res.json()) as { projects?: JiraProjectOption[]; error?: string };
       if (!res.ok) {
@@ -417,7 +524,7 @@ export function ConnectorWizard({
       const res = await fetch("/api/connectors/github/repos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: credentials.token }),
+        body: JSON.stringify(storedConnectorId ? { connectorId: storedConnectorId } : { token: credentials.token }),
       });
       const body = (await res.json()) as { repos?: GithubRepoOption[]; error?: string };
       if (!res.ok) {
@@ -441,7 +548,9 @@ export function ConnectorWizard({
       const res = await fetch("/api/connectors/gitlab/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseUrl, token: credentials.token }),
+        body: JSON.stringify(
+          storedConnectorId ? { connectorId: storedConnectorId } : { baseUrl, token: credentials.token }
+        ),
       });
       const body = (await res.json()) as { projects?: GithubRepoOption[]; error?: string };
       if (!res.ok) {
@@ -470,7 +579,11 @@ export function ConnectorWizard({
       const res = await fetch("/api/connectors/bitbucket/repos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: credentials.email, token: credentials.token, workspace }),
+        body: JSON.stringify(
+          storedConnectorId
+            ? { connectorId: storedConnectorId, workspace }
+            : { email: credentials.email, token: credentials.token, workspace }
+        ),
       });
       const body = (await res.json()) as { repos?: GithubRepoOption[]; error?: string };
       if (!res.ok) {
@@ -495,12 +608,16 @@ export function ConnectorWizard({
       const res = await fetch("/api/connectors/imap/mailboxes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          host: config.host,
-          port: portRaw ? Number(portRaw) : 993,
-          username: credentials.imap_username,
-          password: credentials.imap_password,
-        }),
+        body: JSON.stringify(
+          storedConnectorId
+            ? { connectorId: storedConnectorId }
+            : {
+                host: config.host,
+                port: portRaw ? Number(portRaw) : 993,
+                username: credentials.imap_username,
+                password: credentials.imap_password,
+              }
+        ),
       });
       const body = (await res.json()) as { folders?: ImapFolderOption[]; error?: string };
       if (!res.ok) {
@@ -524,7 +641,7 @@ export function ConnectorWizard({
       const res = await fetch("/api/connectors/slack/channels", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: credentials.token }),
+        body: JSON.stringify(storedConnectorId ? { connectorId: storedConnectorId } : { token: credentials.token }),
       });
       const body = (await res.json()) as { channels?: SlackChannelOption[]; error?: string };
       if (!res.ok) {
@@ -539,6 +656,39 @@ export function ConnectorWizard({
     } finally {
       setSlackListAttempted(true);
       setSlackLoading(false);
+    }
+  };
+
+  const loadTeams = async () => {
+    setTeamsLoading(true);
+    setTeamsError(null);
+    try {
+      const res = await fetch("/api/connectors/teams/teams", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          storedConnectorId
+            ? { connectorId: storedConnectorId }
+            : {
+                clientId: credentials.teams_client_id,
+                clientSecret: credentials.teams_client_secret,
+                directoryId: credentials.teams_directory_id,
+              }
+        ),
+      });
+      const body = (await res.json()) as { teams?: TeamOption[]; error?: string };
+      if (!res.ok) {
+        setTeamsError(body.error ?? "Could not load Microsoft Teams");
+        setTeams(savedTeamOptions(selectedTeams));
+        return;
+      }
+      setTeams(body.teams ?? []);
+    } catch {
+      setTeamsError("Could not load Microsoft Teams");
+      setTeams(savedTeamOptions(selectedTeams));
+    } finally {
+      setTeamsListAttempted(true);
+      setTeamsLoading(false);
     }
   };
 
@@ -566,6 +716,10 @@ export function ConnectorWizard({
     }
     if (isSlack && selectedSlackChannels.length === 0) {
       setSlackError("Select at least one channel. Invite the bot to private channels first.");
+      return;
+    }
+    if (isTeams && selectedTeams.length === 0) {
+      setTeamsError("Select at least one team. There is no whole-tenant option.");
       return;
     }
     if (isS3 && selectedS3Scopes.length === 0) {
@@ -621,6 +775,7 @@ export function ConnectorWizard({
           }
         : {};
       const slackConfig = isSlack ? { channels: selectedSlackChannels } : {};
+      const teamsConfig = isTeams ? { teams: selectedTeams } : {};
       const s3ScopeConfig = isS3 ? { prefix: selectedS3Scopes[0] ?? "" } : {};
       const payload: Record<string, unknown> = {
         name: name.trim(),
@@ -633,6 +788,7 @@ export function ConnectorWizard({
           ...bitbucketConfig,
           ...imapConfig,
           ...slackConfig,
+          ...teamsConfig,
           ...s3ScopeConfig,
           ...(dataTypeOptions.length > 0 ? { dataTypes } : {}),
         },
@@ -657,21 +813,15 @@ export function ConnectorWizard({
           alert(await readError(res));
           return;
         }
-        if (isS3) {
-          // Scope edits re-index from the start: the old prefix's files must
-          // leave the index, which only a full re-index guarantees.
-          const nextScope = selectedS3Scopes[0] ?? "";
-          const prevScope = typeof existingConfig.prefix === "string" ? existingConfig.prefix : "";
-          if (nextScope && nextScope !== prevScope) {
-            const reindex = await fetch(`/api/connectors/${existingConnector.id}/sync-now`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ fromBeginning: true }),
-            });
-            if (!reindex.ok) {
-              alert(`Scope saved, but the full re-index could not start: ${await readError(reindex)}`);
-              return;
-            }
+        if (scopeDirty) {
+          const reindex = await fetch(`/api/connectors/${existingConnector.id}/sync-now`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ fromBeginning: true }),
+          });
+          if (!reindex.ok) {
+            alert(`Scope saved, but the full re-index could not start: ${await readError(reindex)}`);
+            return;
           }
         }
       } else if (isGitHub) {
@@ -1010,7 +1160,9 @@ export function ConnectorWizard({
                           ? "Next we ask the mailbox for its folder list. You must pick folders — there is no whole-inbox option."
                           : isSlack
                             ? "We check this bot token with Slack when you click Check fields. Invalid or revoked tokens cannot continue. Next we load channels the bot is already in — you must pick at least one."
-                            : isS3
+                            : isTeams
+                              ? "Next we load the teams this app can access. You must pick at least one — there is no whole-tenant option."
+                              : isS3
                               ? "Next we browse the bucket's folders. You must pick folders — there is no whole-bucket option."
                               : "StaffLess has no separate connection-test API. Credentials are verified on the next Sync Now."}
               </p>
@@ -1028,40 +1180,42 @@ export function ConnectorWizard({
                   onClick={() => {
                     setStep(3);
                     if (
-                      isJira &&
-                      jiraProjects.length === 0 &&
-                      baseUrl.trim() &&
-                      credentials.email?.trim() &&
-                      credentials.apiToken?.trim()
+                      (isJira && jiraProjects.length === 0 && (storedConnectorId || (baseUrl.trim() && credentials.email?.trim() && credentials.apiToken?.trim())))
                     ) {
                       void loadJiraProjects();
                     }
-                    if (isGitHub && githubRepos.length === 0 && credentials.token?.trim()) {
+                    if (isGitHub && githubRepos.length === 0 && (storedConnectorId || credentials.token?.trim())) {
                       void loadGithubRepos();
                     }
-                    if (isGitlab && gitlabProjects.length === 0 && credentials.token?.trim() && baseUrl.trim()) {
+                    if (isGitlab && gitlabProjects.length === 0 && (storedConnectorId || (credentials.token?.trim() && baseUrl.trim()))) {
                       void loadGitlabProjects();
                     }
                     if (
                       isBitbucket &&
                       bitbucketRepos.length === 0 &&
-                      credentials.email?.trim() &&
-                      credentials.token?.trim() &&
-                      bitbucketWorkspace.trim()
+                      bitbucketWorkspace.trim() &&
+                      (storedConnectorId || (credentials.email?.trim() && credentials.token?.trim()))
                     ) {
                       void loadBitbucketRepos();
                     }
                     if (
                       isImap &&
                       imapFolders.length === 0 &&
-                      credentials.imap_username?.trim() &&
-                      credentials.imap_password &&
-                      config.host?.trim()
+                      (storedConnectorId || (credentials.imap_username?.trim() && credentials.imap_password && config.host?.trim()))
                     ) {
                       void loadImapFolders();
                     }
-                    if (isSlack && credentials.token?.trim()) {
+                    if (isSlack && (storedConnectorId || credentials.token?.trim())) {
                       void loadSlackChannels();
+                    }
+                    if (
+                      isTeams &&
+                      (storedConnectorId ||
+                        (credentials.teams_client_id?.trim() &&
+                          credentials.teams_client_secret?.trim() &&
+                          credentials.teams_directory_id?.trim()))
+                    ) {
+                      void loadTeams();
                     }
                   }}
                   className="rounded-lg bg-[#2548C9] px-5 py-2 text-sm font-semibold text-white disabled:opacity-40"
@@ -1103,9 +1257,10 @@ export function ConnectorWizard({
                   );
                 }}
                 onReload={loadGithubRepos}
-                canReload={Boolean(credentials.token?.trim())}
+                canReload={Boolean(storedConnectorId || credentials.token?.trim())}
               />
-              {isEdit && !replaceCredentials && (
+              <ScopeReindexNotice show={scopeDirty} />
+              {isEdit && !replaceCredentials && !storedConnectorId && (
                 <p className="text-xs text-gray-500">
                   Enter credentials again (Replace credentials) to load the live list. Until then you can keep the
                   repositories already saved on this connector.
@@ -1153,9 +1308,10 @@ export function ConnectorWizard({
                   );
                 }}
                 onReload={loadGitlabProjects}
-                canReload={Boolean(baseUrl.trim() && credentials.token?.trim())}
+                canReload={Boolean(storedConnectorId || (baseUrl.trim() && credentials.token?.trim()))}
               />
-              {isEdit && !replaceCredentials && (
+              <ScopeReindexNotice show={scopeDirty} />
+              {isEdit && !replaceCredentials && !storedConnectorId && (
                 <p className="text-xs text-gray-500">
                   Enter credentials again (Replace credentials) to load the live list. Until then you can keep the
                   projects already saved on this connector.
@@ -1232,10 +1388,12 @@ export function ConnectorWizard({
                 }}
                 onReload={loadBitbucketRepos}
                 canReload={Boolean(
-                  credentials.email?.trim() && credentials.token?.trim() && bitbucketWorkspace.trim()
+                  bitbucketWorkspace.trim() &&
+                    (storedConnectorId || (credentials.email?.trim() && credentials.token?.trim()))
                 )}
               />
-              {isEdit && !replaceCredentials && (
+              <ScopeReindexNotice show={scopeDirty} />
+              {isEdit && !replaceCredentials && !storedConnectorId && (
                 <p className="text-xs text-gray-500">
                   Enter credentials again (Replace credentials) to load the live list. Until then you can keep the
                   repositories already saved on this connector.
@@ -1277,9 +1435,10 @@ export function ConnectorWizard({
                   );
                 }}
                 onReload={loadJiraProjects}
-                canReload={Boolean(baseUrl.trim() && credentials.email && credentials.apiToken)}
+                canReload={Boolean(storedConnectorId || (baseUrl.trim() && credentials.email && credentials.apiToken))}
               />
-              {isEdit && !replaceCredentials && (
+              <ScopeReindexNotice show={scopeDirty} />
+              {isEdit && !replaceCredentials && !storedConnectorId && (
                 <p className="text-xs text-gray-500">
                   Enter credentials again (Replace credentials) to load the live list. Until then you can keep the
                   projects already saved on this connector.
@@ -1316,7 +1475,9 @@ export function ConnectorWizard({
                   );
                 }}
                 onReload={loadImapFolders}
-                canReload={Boolean(config.host?.trim() && credentials.imap_username && credentials.imap_password)}
+                canReload={Boolean(
+                  storedConnectorId || (config.host?.trim() && credentials.imap_username && credentials.imap_password)
+                )}
               />
               <div>
                 <label className="block text-sm font-semibold text-gray-800 mb-1">
@@ -1342,7 +1503,8 @@ export function ConnectorWizard({
                   <p className="text-sm text-red-700 mt-1">Add at least one approved sender or domain</p>
                 ) : null}
               </div>
-              {isEdit && !replaceCredentials && (
+              <ScopeReindexNotice show={scopeDirty} />
+              {isEdit && !replaceCredentials && !storedConnectorId && (
                 <p className="text-xs text-gray-500">
                   Enter credentials again (Replace credentials) to load the live list. Until then you can keep the
                   folders already saved on this connector.
@@ -1395,9 +1557,10 @@ export function ConnectorWizard({
                   );
                 }}
                 onReload={loadSlackChannels}
-                canReload={Boolean(credentials.token?.trim())}
+                canReload={Boolean(storedConnectorId || credentials.token?.trim())}
               />
-              {isEdit && !replaceCredentials && (
+              <ScopeReindexNotice show={scopeDirty} />
+              {isEdit && !replaceCredentials && !storedConnectorId && (
                 <p className="text-xs text-gray-500">
                   Enter credentials again (Replace credentials) to load the live list. Until then you can keep the
                   channels already saved on this connector.
@@ -1419,31 +1582,90 @@ export function ConnectorWizard({
             </div>
           )}
 
+          {step === 3 && isTeams && (
+            <div className="space-y-4">
+              <GithubRepoPicker
+                repos={teams}
+                loading={teamsLoading}
+                error={teamsError}
+                filter={teamsFilter}
+                onFilter={setTeamsFilter}
+                allRepos={false}
+                allReposOwner={null}
+                selectedFullNames={selectedTeams}
+                hideAllOption
+                heading="Which Teams should we copy?"
+                loadLabel="Load teams"
+                loadingLabel="Asking Microsoft Graph for teams this app can access…"
+                emptyLabel={
+                  teamsListAttempted
+                    ? "This app cannot see any teams. Confirm Team.ReadBasic.All has admin consent, then click Load teams."
+                    : "No teams loaded yet. Click Load teams."
+                }
+                filterPlaceholder="Search by team name"
+                selectedHint={(count) =>
+                  `${count} selected — channel messages in these teams are indexed. There is no whole-tenant option.`
+                }
+                onToggleAllRepos={() => undefined}
+                onToggleRepo={(fullName, checked) => {
+                  setSelectedTeams((prev) =>
+                    checked ? (prev.includes(fullName) ? prev : [...prev, fullName]) : prev.filter((n) => n !== fullName)
+                  );
+                }}
+                onReload={loadTeams}
+                canReload={Boolean(
+                  storedConnectorId ||
+                    (credentials.teams_client_id?.trim() &&
+                      credentials.teams_client_secret?.trim() &&
+                      credentials.teams_directory_id?.trim())
+                )}
+              />
+              <ScopeReindexNotice show={scopeDirty} />
+              {isEdit && !replaceCredentials && !storedConnectorId && (
+                <p className="text-xs text-gray-500">
+                  Enter credentials again (Replace credentials) to load the live list. Until then you can keep the
+                  teams already saved on this connector.
+                </p>
+              )}
+              <div className="flex justify-between pt-4">
+                <button type="button" onClick={() => setStep(2)} className="text-sm text-gray-600 hover:underline">
+                  Back
+                </button>
+                <button
+                  type="button"
+                  disabled={!canProceedTeams}
+                  onClick={() => setStep(4)}
+                  className="rounded-lg bg-[#2548C9] px-5 py-2 text-sm font-semibold text-white disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+
           {step === 3 && isS3 && (
             <div className="space-y-4">
               <S3FolderBrowser
                 accessKeyId={credentials.access_key_id ?? ""}
                 secretAccessKey={credentials.secret_access_key ?? ""}
                 bucket={config.bucket_name?.trim() ?? ""}
+                connectorId={storedConnectorId}
                 selected={selectedS3Scopes}
                 onToggleScope={toggleS3Scope}
                 single={isEdit}
                 canBrowse={Boolean(
-                  credentials.access_key_id?.trim() &&
-                    credentials.secret_access_key &&
-                    config.bucket_name?.trim()
+                  storedConnectorId ||
+                    (credentials.access_key_id?.trim() &&
+                      credentials.secret_access_key &&
+                      config.bucket_name?.trim())
                 )}
               />
               {s3Error ? <p className="text-sm text-red-700">{s3Error}</p> : null}
-              {isEdit && !replaceCredentials && (
+              <ScopeReindexNotice show={scopeDirty} />
+              {isEdit && !replaceCredentials && !storedConnectorId && (
                 <p className="text-xs text-gray-500">
                   Enter credentials again (Replace credentials) to browse the live bucket. Until then the saved scope
                   is kept.
-                </p>
-              )}
-              {isEdit && (
-                <p className="text-xs font-semibold text-amber-900">
-                  Saving a different folder removes the previously indexed files and re-indexes from the start.
                 </p>
               )}
               <div className="flex justify-between pt-4">
@@ -1469,11 +1691,14 @@ export function ConnectorWizard({
                   accessKeyId={credentials.access_key_id ?? ""}
                   secretAccessKey={credentials.secret_access_key ?? ""}
                   bucket={config.bucket_name?.trim() ?? ""}
+                  connectorId={storedConnectorId}
                   scopes={selectedS3Scopes}
                   isEdit={isEdit}
+                  scopeChanged={scopeDirty}
                 />
               )}
-              {hasSourcePicker && !isEdit && !isS3 && (
+              <ScopeReindexNotice show={scopeDirty && !isS3} />
+              {hasSourcePicker && !isEdit && !isS3 && !isTeams && (
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-gray-700">How far back should we copy?</label>
                   <p className="text-xs text-gray-500">

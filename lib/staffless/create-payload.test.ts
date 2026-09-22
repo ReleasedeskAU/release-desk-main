@@ -266,7 +266,7 @@ describe("planStafflessCreate", () => {
     );
   });
 
-  it("builds Teams credential and optional team-name list as a StaffLess array", () => {
+  it("builds Teams credential and selected team names as a StaffLess array", () => {
     const plan = planStafflessCreate({
       name: "Teams RD",
       type: "teams",
@@ -275,7 +275,7 @@ describe("planStafflessCreate", () => {
         teams_client_secret: "client-secret",
         teams_directory_id: "tenant-id",
       },
-      config: { teamNames: " Support, Engineering , " },
+      config: { teams: [" Support ", "Engineering", "Support"] },
       pollInterval: 30,
     });
     assert.equal(plan.credential.source, "teams");
@@ -290,7 +290,7 @@ describe("planStafflessCreate", () => {
     assert.deepEqual(plan.connector.connector_specific_config.teams, ["Support", "Engineering"]);
   });
 
-  it("indexes all Teams when the optional name list is blank", () => {
+  it("still accepts a legacy comma-separated team name string", () => {
     const plan = planStafflessCreate({
       name: "Teams RD",
       type: "teams",
@@ -299,8 +299,25 @@ describe("planStafflessCreate", () => {
         teams_client_secret: "secret",
         teams_directory_id: "tid",
       },
+      config: { teamNames: " Support, Engineering , " },
     });
-    assert.deepEqual(plan.connector.connector_specific_config.teams, []);
+    assert.deepEqual(plan.connector.connector_specific_config.teams, ["Support", "Engineering"]);
+  });
+
+  it("refuses Teams when no team is selected", () => {
+    assert.throws(
+      () =>
+        planStafflessCreate({
+          name: "Teams RD",
+          type: "teams",
+          credentials: {
+            teams_client_id: "id",
+            teams_client_secret: "secret",
+            teams_directory_id: "tid",
+          },
+        }),
+      /at least one team/
+    );
   });
 
   it("rejects Teams when any of the three Azure fields is missing", () => {

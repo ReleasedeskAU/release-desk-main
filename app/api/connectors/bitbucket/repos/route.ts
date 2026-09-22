@@ -6,14 +6,27 @@ import { CatalogCreateError } from "@/lib/admin-connectors/plan-create";
 import { fetchBitbucketRepos } from "@/lib/bitbucket/fetch-repos";
 import { BitbucketProbeError, firstBitbucketSlug } from "@/lib/bitbucket/probe";
 import { logger } from "@/lib/logger";
+import {
+  requiredCredentialField,
+  resolveStoredConnector,
+  sanitizeListResponse,
+  StoredCredentialError,
+} from "@/lib/staffless/unmasked-credential";
 
-const bodySchema = z
+const pastedSchema = z
   .object({
     email: z.string().trim().min(1).max(320),
     token: z.string().trim().min(1).max(500),
     workspace: z.string().trim().min(1).max(80),
   })
   .strict();
+const storedSchema = z
+  .object({
+    connectorId: z.string().regex(/^\d+$/),
+    workspace: z.string().trim().min(1).max(80),
+  })
+  .strict();
+const bodySchema = z.union([storedSchema, pastedSchema]);
 
 const lastCallByTokenHash = new Map<string, number>();
 const COOLDOWN_MS = 5_000;
@@ -33,23 +46,47 @@ export async function POST(req: Request) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "Bitbucket email, API token, and workspace slug are required" },
+      { error: "Bitbucket email, API token, and workspace slug, or a connector id, are required" },
       { status: 400 }
     );
   }
 
+  let email: string;
+  let token: string;
+  let workspaceInput: string;
+  let cooldown: string;
+  try {
+    if ("connectorId" in parsed.data) {
+      const stored = await resolveStoredConnector(parsed.data.connectorId, "bitbucket");
+      email = requiredCredentialField(stored.credentialJson, "bitbucket_email");
+      token = requiredCredentialField(stored.credentialJson, "bitbucket_api_token");
+      workspaceInput = parsed.data.workspace;
+      cooldown = `connector:${parsed.data.connectorId}`;
+    } else {
+      email = parsed.data.email;
+      token = parsed.data.token;
+      workspaceInput = parsed.data.workspace;
+      cooldown = tokenHash(token);
+    }
+  } catch (err) {
+    if (err instanceof StoredCredentialError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    logger.error("api/connectors/bitbucket/repos", { kind: err instanceof Error ? err.name : "unknown" });
+    return NextResponse.json({ error: "Stored credential is unavailable" }, { status: 502 });
+  }
+
   const now = Date.now();
-  const key = tokenHash(parsed.data.token);
-  const last = lastCallByTokenHash.get(key) ?? 0;
+  const last = lastCallByTokenHash.get(cooldown) ?? 0;
   if (now - last < COOLDOWN_MS) {
     return NextResponse.json({ error: "Please wait a few seconds before listing repositories again" }, { status: 429 });
   }
-  lastCallByTokenHash.set(key, now);
+  lastCallByTokenHash.set(cooldown, now);
 
   try {
-    const workspace = firstBitbucketSlug(parsed.data.workspace, "Workspace", true);
-    const repos = await fetchBitbucketRepos(parsed.data.email, parsed.data.token, workspace);
-    return NextResponse.json({ repos });
+    const workspace = firstBitbucketSlug(workspaceInput, "Workspace", true);
+    const repos = await fetchBitbucketRepos(email, token, workspace);
+    return NextResponse.json(sanitizeListResponse({ repos }));
   } catch (err) {
     if (err instanceof CatalogCreateError) {
       return NextResponse.json({ error: err.message }, { status: 400 });

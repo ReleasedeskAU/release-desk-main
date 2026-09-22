@@ -7,6 +7,8 @@ export type GithubRepoOption = {
   name: string;
   owner: string;
   private?: boolean;
+  /** Extra picker note. Teams uses this when several teams share one display name. */
+  detail?: string;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
