@@ -55,6 +55,7 @@ describe("ask sources", () => {
     ]);
     assert.match(text, /source=<id>/);
     assert.match(text, /do not walk created sources one at a time/);
+    assert.equal(/A later turn that names no source/.test(text), false);
     assert.match(text, /bitbucket/);
     assert.equal(/only have Jira and GitHub/.test(text), false);
   });

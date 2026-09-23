@@ -189,6 +189,7 @@ describe("Ask catalog tools", () => {
     assert.match(ASK_AGENT_SYSTEM, /does not apply before a source-less content search/);
     assert.match(ASK_AGENT_SYSTEM, /cannot filter on it/);
     assert.match(ASK_AGENT_SYSTEM, /do not walk created sources one at a time/);
+    assert.equal(/A later turn that names no source/.test(ASK_AGENT_SYSTEM), false);
     assert.match(ASK_AGENT_SYSTEM, /Retry search with a broader query and\/or source=all/);
     assert.equal(/the question did not choose among them/.test(ASK_AGENT_SYSTEM), false);
     assert.equal(/Never facts \(counts, parent, children, due dates\)/.test(ASK_AGENT_SYSTEM), false);

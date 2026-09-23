@@ -22,6 +22,15 @@ describe("ask-eval cases", () => {
     assert.equal(rows[0]?.requiresSource, "slack");
   });
 
+  it("includes SOURCE_FOLLOWUP as a two-turn Teams then source-less pair", () => {
+    const rows = selectAskEvalCases(["SOURCE_FOLLOWUP"]);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.id, "SOURCE_FOLLOWUP");
+    assert.equal(rows[0]?.priorQuestion, "What happened recently in Teams?");
+    assert.equal(rows[0]?.priorSource, "teams");
+    assert.equal(rows[0]?.question, "Who's working on the release stuff?");
+  });
+
   it("selects a subset of the closed list and rejects unknown ids", () => {
     const rows = selectAskEvalCases(["JIRA_KEY", "CHANNEL"]);
     assert.deepEqual(

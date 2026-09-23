@@ -18,14 +18,19 @@ export type AskEvalCaseId =
   | "LATEST_MESSAGE"
   | "GRAPH_BLOCKERS"
   | "GRAPH_CLOSURE"
-  | "GRAPH_CHILDREN";
+  | "GRAPH_CHILDREN"
+  | "SOURCE_FOLLOWUP";
 
 export type AskEvalOutcome = "pass" | "fail" | "infra" | "skip";
 
 export type AskEvalCase = {
   id: AskEvalCaseId;
   question: string;
-  requiresSource: "github" | "slack" | "jira";
+  requiresSource: "github" | "slack" | "jira" | "teams";
+  /** Prior user turn; when set, the runner scores only the follow-up. */
+  priorQuestion?: string;
+  /** Connector the prior question named; reused on the follow-up is a fail. */
+  priorSource?: string;
 };
 
 export type AskEvalScore = {

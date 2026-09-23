@@ -31,6 +31,48 @@ export const ASK_OPENAI_MAX_RETRIES = 3;
 
 export type AskHistoryTurn = { role: "user" | "assistant"; content: string };
 
+const ASK_HISTORY_TURN_LIMIT = 16;
+
+/**
+ * Fixed follow-up example. Placed after prior turns, not in the system prompt:
+ * the previous answer is what the model would otherwise copy a source from.
+ */
+export const ASK_FOLLOWUP_SOURCE_EXAMPLE = [
+  "Follow-up source scope. Earlier turns do not set source.",
+  "User: What happened recently in Teams?",
+  "→ source=teams, because this question names Teams.",
+  "User: Who's working on the release stuff?",
+  "→ This question names no source. Call a tool with source omitted or source=all. Do not pass source=teams. Do not answer from the previous reply.",
+  "User: What about Slack?",
+  "→ source=slack, because this question names Slack.",
+].join("\n");
+
+/**
+ * Assemble the Ask messages for one turn.
+ * A follow-up example is inserted only when this tab already has history, after
+ * those turns and before the current question. First turns are system + question.
+ * @param system - System prompt, including this turn's source inventory.
+ * @param history - Prior user/assistant text. Tool traces are not included.
+ * @param message - Current user question.
+ * @returns System, optional history, optional follow-up example, then the question.
+ */
+export function buildAskMessages(opts: {
+  system: string;
+  history: readonly AskHistoryTurn[];
+  message: string;
+}): ChatCompletionMessageParam[] {
+  const history = opts.history.slice(-ASK_HISTORY_TURN_LIMIT).map((turn) => ({
+    role: turn.role,
+    content: turn.content,
+  }));
+  const messages: ChatCompletionMessageParam[] = [{ role: "system", content: opts.system }, ...history];
+  if (history.length > 0) {
+    messages.push({ role: "system", content: ASK_FOLLOWUP_SOURCE_EXAMPLE });
+  }
+  messages.push({ role: "user", content: opts.message });
+  return messages;
+}
+
 /** One tool invocation from the Ask loop, in call order. */
 export type AskToolTraceCall = {
   round: number;
@@ -88,14 +130,11 @@ export async function* runAskAgent(opts: {
 
   const openai = new OpenAI({ apiKey, maxRetries: ASK_OPENAI_MAX_RETRIES });
   const indexedSources = await loadAskIndexedSources();
-  const messages: ChatCompletionMessageParam[] = [
-    { role: "system", content: `${ASK_AGENT_SYSTEM}\n\n${formatAskSourceInventory(indexedSources)}` },
-    ...opts.history.slice(-16).map((turn) => ({
-      role: turn.role as "user" | "assistant",
-      content: turn.content,
-    })),
-    { role: "user", content: opts.message },
-  ];
+  const messages = buildAskMessages({
+    system: `${ASK_AGENT_SYSTEM}\n\n${formatAskSourceInventory(indexedSources)}`,
+    history: opts.history,
+    message: opts.message,
+  });
 
   try {
     const { text, tools, sources } = await completeAskWithTools(openai, messages, {

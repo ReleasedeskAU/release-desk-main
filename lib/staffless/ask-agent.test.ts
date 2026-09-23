@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type OpenAI from "openai";
-import { completeAskWithTools } from "./ask-agent";
+import { ASK_FOLLOWUP_SOURCE_EXAMPLE, buildAskMessages, completeAskWithTools } from "./ask-agent";
 
 function fakeOpenAI(
   steps: Array<{
@@ -111,5 +111,40 @@ describe("completeAskWithTools traces", () => {
     assert.equal(out.calls.length, 0);
     assert.equal(out.tools.length, 0);
     assert.equal(out.text, "I need a lookup.");
+  });
+});
+
+describe("buildAskMessages", () => {
+  it("leaves a first turn as system plus the question", () => {
+    const messages = buildAskMessages({
+      system: "rules",
+      history: [],
+      message: "How many PRs are closed?",
+    });
+    assert.deepEqual(
+      messages.map((row) => row.role),
+      ["system", "user"]
+    );
+    assert.equal(messages.some((row) => row.content === ASK_FOLLOWUP_SOURCE_EXAMPLE), false);
+  });
+
+  it("places the follow-up example after history and before the current question", () => {
+    const messages = buildAskMessages({
+      system: "rules",
+      history: [
+        { role: "user", content: "What happened recently in Teams?" },
+        { role: "assistant", content: "Release 36.2 was announced in Teams." },
+      ],
+      message: "Who's working on the release stuff?",
+    });
+    assert.deepEqual(
+      messages.map((row) => row.role),
+      ["system", "user", "assistant", "system", "user"]
+    );
+    assert.equal(messages[3]?.content, ASK_FOLLOWUP_SOURCE_EXAMPLE);
+    assert.equal(messages[4]?.content, "Who's working on the release stuff?");
+    assert.match(ASK_FOLLOWUP_SOURCE_EXAMPLE, /source=teams/);
+    assert.match(ASK_FOLLOWUP_SOURCE_EXAMPLE, /source omitted or source=all/);
+    assert.match(ASK_FOLLOWUP_SOURCE_EXAMPLE, /source=slack/);
   });
 });

@@ -19,6 +19,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Ask follow-up source scope:** When a tab already has history, a fixed three-turn example is inserted after those turns and before the current question. A later question that names no connector is source-less (`source` omitted or `source=all`) on every tool that takes `source`. A follow-up that names a connector still uses that connector. First turns are unchanged. Auth unchanged. BN-378.
+
 - **S3 folders live on one connector:** The engine `BlobStorageConnector` accepts `prefixes: list[str]` and still reads the legacy single `prefix` so existing connectors keep working. An empty list is rejected (no whole-bucket option). The wizard writes the folder list on one row — one credential, one sync, one pause — and edit add/remove uses the stored-credential browse already used for the other guided sources. Changing the folder list shows the same re-index-from-beginning disclosure. Auth unchanged. BN-378.
 
 - **Microsoft Teams scope is a live picker:** The wizard loads teams with `GET https://graph.microsoft.com/v1.0/teams` (same client-credentials app the indexer uses) via `POST /api/connectors/teams/teams`. Checkboxes replace the Team names text field. At least one team is required — a blank list is no longer “every team.” Edit loads the list from the stored connector id. A changed selection shows the re-index disclosure and syncs from the beginning. The catalog form cannot create a Teams connector. Auth: editor role. The client secret is not logged and is not in the list response.

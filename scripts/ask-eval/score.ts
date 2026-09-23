@@ -14,12 +14,14 @@ type FilterPair = { field: string; value: string };
  * @param id - Case id from the closed list.
  * @param text - Final answer text.
  * @param calls - Tool traces in call order.
+ * @param priorSource - Connector named on a prior turn; reused here is a fail.
  * @returns pass, fail, or infra — never skip (skip is decided before the call).
  */
 export function scoreAskEvalTurn(
   id: AskEvalCaseId,
   text: string,
-  calls: readonly AskToolTraceCall[]
+  calls: readonly AskToolTraceCall[],
+  priorSource?: string
 ): AskEvalScore {
   if (isInfraAnswer(text)) return { outcome: "infra", reason: "unavailable_or_empty" };
   if (hasRetryableToolFailure(calls)) {
@@ -54,6 +56,8 @@ export function scoreAskEvalTurn(
       return scoreGraphClosure(text, calls);
     case "GRAPH_CHILDREN":
       return scoreGraphChildren(text, calls);
+    case "SOURCE_FOLLOWUP":
+      return scoreSourceFollowup(calls, priorSource);
     default:
       return { outcome: "fail", reason: "unknown_case" };
   }
@@ -408,6 +412,28 @@ function scoreGraphClosure(text: string, calls: readonly AskToolTraceCall[]): As
   }
   void text;
   return { outcome: "pass", reason: "graph_closure" };
+}
+
+/**
+ * Follow-up that named no connector: every sourced tool must be all or omitted.
+ * Reusing the prior turn's source is the original regression.
+ */
+function scoreSourceFollowup(
+  calls: readonly AskToolTraceCall[],
+  priorSource?: string
+): AskEvalScore {
+  const sourced = calls.filter((call) => call.name !== "list_indexed_sources");
+  if (sourced.length === 0) return { outcome: "fail", reason: "no_source_query" };
+  const prior = priorSource?.trim().toLowerCase() ?? "";
+  for (const call of sourced) {
+    const source = String(asRecord(call.arguments).source ?? "")
+      .trim()
+      .toLowerCase();
+    if (!source || source === "all") continue;
+    if (prior && source === prior) return { outcome: "fail", reason: "reused_prior_source" };
+    return { outcome: "fail", reason: "named_source" };
+  }
+  return { outcome: "pass", reason: "all_or_omitted" };
 }
 
 function scoreGraphChildren(text: string, calls: readonly AskToolTraceCall[]): AskEvalScore {

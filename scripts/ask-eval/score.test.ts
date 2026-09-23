@@ -281,4 +281,61 @@ describe("scoreAskEvalTurn", () => {
     assert.equal(viaCatalog.outcome, "pass");
     assert.equal(viaCatalog.reason, "catalog_children_parity");
   });
+
+  it("passes SOURCE_FOLLOWUP when turn-2 source is all or omitted", () => {
+    const omitted = scoreAskEvalTurn(
+      "SOURCE_FOLLOWUP",
+      "Several people are working on the release.",
+      [call("list_distinct_values", { field: "author" })],
+      "teams"
+    );
+    assert.equal(omitted.outcome, "pass");
+    assert.equal(omitted.reason, "all_or_omitted");
+    const all = scoreAskEvalTurn(
+      "SOURCE_FOLLOWUP",
+      "Several people are working on the release.",
+      [call("list_distinct_values", { field: "author", source: "all" })],
+      "teams"
+    );
+    assert.equal(all.outcome, "pass");
+  });
+
+  it("fails SOURCE_FOLLOWUP when turn 2 reuses the prior source", () => {
+    const scored = scoreAskEvalTurn(
+      "SOURCE_FOLLOWUP",
+      "The Teams authors are working on the release.",
+      [call("list_distinct_values", { field: "author", source: "teams" })],
+      "teams"
+    );
+    assert.equal(scored.outcome, "fail");
+    assert.equal(scored.reason, "reused_prior_source");
+  });
+
+  it("fails SOURCE_FOLLOWUP when turn 2 mixes all with the prior source", () => {
+    const scored = scoreAskEvalTurn(
+      "SOURCE_FOLLOWUP",
+      "Authors across sources, then Teams.",
+      [
+        call("list_distinct_values", { field: "author", source: "all" }),
+        call("search_indexed_documents", { query: "release", source: "teams" }),
+      ],
+      "teams"
+    );
+    assert.equal(scored.outcome, "fail");
+    assert.equal(scored.reason, "reused_prior_source");
+  });
+
+  it("fails SOURCE_FOLLOWUP when turn 2 names another source or never queries", () => {
+    const named = scoreAskEvalTurn(
+      "SOURCE_FOLLOWUP",
+      "Slack authors are working on the release.",
+      [call("list_distinct_values", { field: "author", source: "slack" })],
+      "teams"
+    );
+    assert.equal(named.outcome, "fail");
+    assert.equal(named.reason, "named_source");
+    const none = scoreAskEvalTurn("SOURCE_FOLLOWUP", "I don't know.", [], "teams");
+    assert.equal(none.outcome, "fail");
+    assert.equal(none.reason, "no_source_query");
+  });
 });

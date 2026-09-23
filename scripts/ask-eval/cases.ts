@@ -44,6 +44,13 @@ export const ASK_EVAL_CASES: AskEvalCase[] = [
     question: "What are the children of BN-15?",
     requiresSource: "jira",
   },
+  {
+    id: "SOURCE_FOLLOWUP",
+    priorQuestion: "What happened recently in Teams?",
+    priorSource: "teams",
+    question: "Who's working on the release stuff?",
+    requiresSource: "teams",
+  },
 ];
 
 /**

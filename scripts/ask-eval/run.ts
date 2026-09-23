@@ -16,7 +16,7 @@ import { resolve } from "node:path";
 import OpenAI from "openai";
 import { ASK_AGENT_SYSTEM } from "../../lib/staffless/ask-copy";
 import { ASK_CANDIDATE_SYSTEM } from "./candidate-system";
-import { ASK_OPENAI_MAX_RETRIES, completeAskWithTools, type AskToolTraceCall } from "../../lib/staffless/ask-agent";
+import { ASK_OPENAI_MAX_RETRIES, buildAskMessages, completeAskWithTools, type AskToolTraceCall } from "../../lib/staffless/ask-agent";
 import { listStafflessConnectors } from "../../lib/staffless/api";
 import { askGroundingFromTools } from "../../lib/staffless/ask-grounding";
 import { formatAskSourceInventory, uniqueAskSources, type AskIndexedSource } from "../../lib/staffless/ask-source";
@@ -90,6 +90,40 @@ function compactCall(call: AskToolTraceCall): AskToolTraceCall {
   return { round: call.round, name: call.name, arguments: call.arguments, result };
 }
 
+function isRateLimit(err: unknown): boolean {
+  return err instanceof Error && err.name === "RateLimitError";
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * One Ask tool loop. Retries twice on TPM 429 so a transient cap is infra only
+ * after the retry budget, not a model fail.
+ */
+async function completeAskOnce(
+  openai: OpenAI,
+  messages: ReturnType<typeof buildAskMessages>,
+  sources: AskIndexedSource[],
+  userQuestion: string
+) {
+  let last: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await completeAskWithTools(openai, messages, {
+        indexedSources: sources,
+        userQuestion,
+      });
+    } catch (err) {
+      last = err;
+      if (!isRateLimit(err) || attempt === 2) throw err;
+      await sleep(20_000);
+    }
+  }
+  throw last;
+}
+
 async function runOne(opts: {
   openai: OpenAI;
   systemPrompt: string;
@@ -98,16 +132,27 @@ async function runOne(opts: {
   n: number;
 }): Promise<AskEvalRun> {
   const started = Date.now();
+  const system = `${opts.systemPrompt}\n\n${formatAskSourceInventory(opts.sources)}`;
   try {
-    const messages = [
-      { role: "system" as const, content: `${opts.systemPrompt}\n\n${formatAskSourceInventory(opts.sources)}` },
-      { role: "user" as const, content: opts.spec.question },
-    ];
-    const out = await completeAskWithTools(opts.openai, messages, {
-      indexedSources: opts.sources,
-      userQuestion: opts.spec.question,
-    });
-    const scored = scoreAskEvalTurn(opts.spec.id, out.text, out.calls);
+    let priorText = "";
+    if (opts.spec.priorQuestion) {
+      const first = await completeAskOnce(
+        opts.openai,
+        buildAskMessages({ system, history: [], message: opts.spec.priorQuestion }),
+        opts.sources,
+        opts.spec.priorQuestion
+      );
+      priorText = first.text.trim() || ASK_PUBLIC_UNAVAILABLE;
+    }
+    const history = opts.spec.priorQuestion
+      ? [
+          { role: "user" as const, content: opts.spec.priorQuestion },
+          { role: "assistant" as const, content: priorText },
+        ]
+      : [];
+    const messages = buildAskMessages({ system, history, message: opts.spec.question });
+    const out = await completeAskOnce(opts.openai, messages, opts.sources, opts.spec.question);
+    const scored = scoreAskEvalTurn(opts.spec.id, out.text, out.calls, opts.spec.priorSource);
     return {
       id: opts.spec.id,
       n: opts.n,
