@@ -51,6 +51,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Ask hybrid search:** `search_indexed_documents` sends `retrieval=hybrid` to StaffLess admin search so paraphrased questions can use indexed vectors. Connectors work-items stay keyword (default). Engine must be deployed with the matching admin-search change. Auth unchanged.
 
+### Fixed
+
+- **Ask answer streaming:** The final answer is written to the existing NDJSON stream as text deltas while the model produces it. Tool rounds still assemble one call and do not emit answer text. A Field|Value table rewrite is still one event. Eval scores the same final text and tool traces. Auth unchanged. BN-378.
+
 ### Security
 
 - **Ask PII tag blocklist:** `sender_email` and `email` join `assignee_email` / `reporter_email` so those keys cannot appear in catalog field projection. Count/filter enum unchanged. Auth unchanged.
