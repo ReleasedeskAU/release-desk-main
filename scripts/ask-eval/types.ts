@@ -19,18 +19,22 @@ export type AskEvalCaseId =
   | "GRAPH_BLOCKERS"
   | "GRAPH_CLOSURE"
   | "GRAPH_CHILDREN"
-  | "SOURCE_FOLLOWUP";
+  | "SOURCE_FOLLOWUP"
+  | "SCHEDULED_TEAMS_CONF"
+  | "SCHEDULED_TEAMS_CONF_TYPO";
 
 export type AskEvalOutcome = "pass" | "fail" | "infra" | "skip";
 
 export type AskEvalCase = {
   id: AskEvalCaseId;
   question: string;
-  requiresSource: "github" | "slack" | "jira" | "teams";
+  requiresSource: "github" | "slack" | "jira" | "teams" | "confluence";
   /** Prior user turn; when set, the runner scores only the follow-up. */
   priorQuestion?: string;
   /** Connector the prior question named; reused on the follow-up is a fail. */
   priorSource?: string;
+  /** Second source that must also be indexed (multi-source cases). */
+  alsoRequiresSource?: "github" | "slack" | "jira" | "teams" | "confluence";
 };
 
 export type AskEvalScore = {

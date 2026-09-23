@@ -51,6 +51,18 @@ export const ASK_EVAL_CASES: AskEvalCase[] = [
     question: "Who's working on the release stuff?",
     requiresSource: "teams",
   },
+  {
+    id: "SCHEDULED_TEAMS_CONF",
+    question: "when release 36.2 is scheduled ?",
+    requiresSource: "teams",
+    alsoRequiresSource: "confluence",
+  },
+  {
+    id: "SCHEDULED_TEAMS_CONF_TYPO",
+    question: "tell when release 36.2 is schedules",
+    requiresSource: "teams",
+    alsoRequiresSource: "confluence",
+  },
 ];
 
 /**

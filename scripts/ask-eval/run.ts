@@ -219,7 +219,9 @@ async function main(): Promise<void> {
 
   const runs: AskEvalRun[] = [];
   for (const spec of cases) {
-    const skip = skipReasonForSource(spec.requiresSource, sources);
+    const skip =
+      skipReasonForSource(spec.requiresSource, sources) ??
+      (spec.alsoRequiresSource ? skipReasonForSource(spec.alsoRequiresSource, sources) : null);
     if (skip) {
       runs.push({
         id: spec.id,
